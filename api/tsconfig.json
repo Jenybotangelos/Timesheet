@@ -4,10 +4,10 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
-    "strict": true,
+    "strict": false,
     "outDir": "./dist",
-    "rootDir": "..",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
   "include": ["./**/*.ts", "../server/src/**/*.ts"]
 }
