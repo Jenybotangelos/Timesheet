@@ -12,6 +12,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Global error handler
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: err.message || "Internal server error" });
+});
+
 // Routes
 app.use("/api/employees", employeesRouter);
 app.use("/api/default-blocks", defaultBlocksRouter);
@@ -22,7 +28,7 @@ app.use("/api/auth", authRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", env: !!process.env.DB_SERVER });
 });
 
 export default app;
