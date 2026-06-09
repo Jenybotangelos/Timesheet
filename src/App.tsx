@@ -24,8 +24,10 @@ function App() {
 
   useEffect(() => {
     instance.handleRedirectPromise().then(async (result) => {
+      console.log("MSAL redirect result:", result);
       if (result && result.account) {
         const email = result.account.username;
+        console.log("Logged in as:", email);
         if (!email.toLowerCase().endsWith("@botangelos.com")) {
           alert("Only @botangelos.com accounts are allowed");
           instance.logoutRedirect();
@@ -39,18 +41,25 @@ function App() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, idToken: result.idToken }),
           });
+          console.log("Backend response status:", res.status);
 
           if (res.ok) {
             const userData = await res.json();
             localStorage.setItem("tasksheet_user", JSON.stringify(userData));
             setUser(userData);
+          } else {
+            const err = await res.json();
+            console.error("Backend login error:", err);
+            alert("Login failed: " + (err.error || "Unknown error"));
           }
         } catch (err) {
           console.error("Backend login failed:", err);
+          alert("Failed to connect to backend API");
         }
       }
       setLoading(false);
-    }).catch(() => {
+    }).catch((err) => {
+      console.error("MSAL error:", err);
       setLoading(false);
     });
   }, []);
