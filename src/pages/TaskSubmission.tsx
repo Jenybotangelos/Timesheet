@@ -106,8 +106,8 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
         email: userEmail,
         date: selectedDate,
         blocks: blocks.map((b) => ({
-          from_time_utc: istToUtc(b.from),
-          to_time_utc: istToUtc(b.to),
+          from: istToUtc(b.from),
+          to: istToUtc(b.to),
         })),
       };
       const res = await fetch(`${API_BASE}/overrides`, {
