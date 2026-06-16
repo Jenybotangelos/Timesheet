@@ -129,15 +129,17 @@ router.post("/", async (req, res) => {
     await transaction.begin();
 
     try {
-      // Get existing overrides for this email + date
+      // Get existing overrides for this email + date, with task entry info
       const existing = await transaction.request()
         .input("email", email)
         .input("date", date)
         .query(
-          `SELECT id, from_time_utc, to_time_utc 
-           FROM timesheet_date_overrides 
-           WHERE employee_email = @email AND override_date = @date
-           ORDER BY from_time_utc`
+          `SELECT o.id, o.from_time_utc, o.to_time_utc, 
+                  CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END as has_task
+           FROM timesheet_date_overrides o
+           LEFT JOIN timesheet_task_entries t ON t.override_id = o.id
+           WHERE o.employee_email = @email AND o.override_date = @date
+           ORDER BY o.from_time_utc`
         );
 
       const existingRows = existing.recordset.map((r: any) => {
@@ -151,12 +153,14 @@ router.post("/", async (req, res) => {
           id: r.id,
           from: fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5),
           to: toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5),
+          hasTask: r.has_task === 1,
         };
       });
 
       let inserted = 0;
       let updated = 0;
       let deleted = 0;
+      let skipped = 0;
 
       // Update rows that exist at same index position
       const updateCount = Math.min(existingRows.length, hourRows.length);
@@ -164,6 +168,10 @@ router.post("/", async (req, res) => {
         const ex = existingRows[i];
         const hr = hourRows[i];
         if (ex.from !== hr.from || ex.to !== hr.to) {
+          if (ex.hasTask) {
+            skipped++;
+            continue; // Skip — has task entry, cannot change
+          }
           await transaction.request()
             .input("id", ex.id)
             .input("from", hr.from)
@@ -187,8 +195,12 @@ router.post("/", async (req, res) => {
         inserted++;
       }
 
-      // Delete extra rows (if existing has more than incoming)
+      // Delete extra rows (if existing has more than incoming) — skip rows with tasks
       for (let i = hourRows.length; i < existingRows.length; i++) {
+        if (existingRows[i].hasTask) {
+          skipped++;
+          continue;
+        }
         await transaction.request()
           .input("id", existingRows[i].id)
           .query("DELETE FROM timesheet_date_overrides WHERE id = @id");

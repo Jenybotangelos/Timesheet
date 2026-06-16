@@ -24,6 +24,7 @@ interface HourRow {
   from: string; // IST HH:mm
   to: string;   // IST HH:mm
   taskDescription: string;
+  saved: boolean; // true if task was already saved to DB
 }
 
 export default function TaskSubmission({ userEmail }: { userEmail: string }) {
@@ -32,10 +33,13 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
   const [hours, setHours] = useState<HourRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<"draft" | "submitted" | null>(null);
   const [editingBlocks, setEditingBlocks] = useState(false);
-  const [blocks, setBlocks] = useState<{ from: string; to: string }[]>([]);
+  const [blocks, setBlocks] = useState<{ from: string; to: string; locked?: boolean }[]>([]);
   const [savingBlocks, setSavingBlocks] = useState(false);
+
+  const submitted = status === "submitted";
 
   async function fetchHours() {
     setLoading(true);
@@ -43,12 +47,13 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
       const res = await fetch(`${API_BASE}/tasks?email=${userEmail}&date=${selectedDate}`);
       const data = await res.json();
 
-      setSubmitted(data.submitted);
+      setStatus(data.status || null);
       setHours(
         data.hours.map((h: any) => ({
           from: utcToIst(h.from_time_utc),
           to: utcToIst(h.to_time_utc),
           taskDescription: h.task_description || "",
+          saved: !!h.task_description,
         }))
       );
     } catch (err) {
@@ -65,23 +70,26 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
   }, [selectedDate]);
 
   function startEditBlocks() {
-    // Group consecutive hours into blocks for editing
+    // Group consecutive hours into blocks for editing, marking locked ones
     if (hours.length === 0) {
       setBlocks([{ from: "09:00", to: "10:00" }]);
     } else {
-      const grouped: { from: string; to: string }[] = [];
+      const grouped: { from: string; to: string; locked?: boolean }[] = [];
       let currentFrom = hours[0].from;
       let currentTo = hours[0].to;
+      let currentLocked = status === "draft" && !!hours[0].taskDescription.trim();
       for (let i = 1; i < hours.length; i++) {
-        if (hours[i].from === currentTo) {
+        const hourLocked = status === "draft" && !!hours[i].taskDescription.trim();
+        if (hours[i].from === currentTo && hourLocked === currentLocked) {
           currentTo = hours[i].to;
         } else {
-          grouped.push({ from: currentFrom, to: currentTo });
+          grouped.push({ from: currentFrom, to: currentTo, locked: currentLocked });
           currentFrom = hours[i].from;
           currentTo = hours[i].to;
+          currentLocked = hourLocked;
         }
       }
-      grouped.push({ from: currentFrom, to: currentTo });
+      grouped.push({ from: currentFrom, to: currentTo, locked: currentLocked });
       setBlocks(grouped);
     }
     setEditingBlocks(true);
@@ -92,6 +100,7 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
   }
 
   function removeBlock(index: number) {
+    if (blocks[index]?.locked) return;
     setBlocks(blocks.filter((_, i) => i !== index));
   }
 
@@ -134,18 +143,14 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
     setHours(hours.map((h, i) => (i === index ? { ...h, taskDescription: value } : h)));
   }
 
-  async function handleSubmit() {
-    const emptyTask = hours.find((h) => !h.taskDescription.trim());
-    if (emptyTask) {
-      alert("Please fill in the task description for all hours.");
-      return;
-    }
-
-    setSubmitting(true);
+  async function handleSave() {
+    if (!confirm("After saving, hours with task descriptions cannot have their time changed. Continue?")) return;
+    setSaving(true);
     try {
       const payload = {
         email: userEmail,
         date: selectedDate,
+        action: "save",
         hours: hours.map((h) => ({
           from: istToUtc(h.from),
           to: istToUtc(h.to),
@@ -160,7 +165,50 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
       });
 
       if (res.ok) {
-        setSubmitted(true);
+        setStatus("draft");
+        alert("Draft saved successfully!");
+      } else {
+        const err = await res.json();
+        alert("Error: " + err.error);
+      }
+    } catch (err) {
+      console.error("Failed to save:", err);
+      alert("Failed to save draft");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmit() {
+    const emptyTask = hours.find((h) => !h.taskDescription.trim());
+    if (emptyTask) {
+      alert("Please fill in the task description for all hours before submitting.");
+      return;
+    }
+
+    if (!confirm("Once submitted, you cannot edit these tasks. Continue?")) return;
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        email: userEmail,
+        date: selectedDate,
+        action: "submit",
+        hours: hours.map((h) => ({
+          from: istToUtc(h.from),
+          to: istToUtc(h.to),
+          taskDescription: h.taskDescription,
+        })),
+      };
+
+      const res = await fetch(`${API_BASE}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setStatus("submitted");
       } else {
         const err = await res.json();
         alert("Error: " + err.error);
@@ -200,12 +248,19 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
+              min={new Date(Date.now() - 86400000).toISOString().split("T")[0]}
+              max={new Date().toISOString().split("T")[0]}
               className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
             />
           </div>
           {submitted && (
             <span className="px-3 py-2 bg-green-500/20 text-green-400 rounded-lg text-sm font-medium border border-green-500/30">
               ✓ Submitted
+            </span>
+          )}
+          {status === "draft" && !submitted && (
+            <span className="px-3 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm font-medium border border-yellow-500/30">
+              Draft Saved
             </span>
           )}
           {!submitted && !editingBlocks && (
@@ -217,7 +272,11 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
             </button>
           )}
           <div className="ml-auto text-lg font-semibold text-[#4fc3f7]">
-            Total: {hours.length} hrs
+            Total: {hours.reduce((sum, h) => {
+              const [fh, fm] = h.from.split(":").map(Number);
+              const [th, tm] = h.to.split(":").map(Number);
+              return sum + (th * 60 + tm - (fh * 60 + fm)) / 60;
+            }, 0)} hrs
           </div>
         </div>
 
@@ -225,23 +284,32 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
         {editingBlocks && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 shadow-lg">
             <h3 className="text-white font-semibold mb-3">Edit Working Hours</h3>
+            {status === "draft" && (
+              <p className="text-yellow-400/80 text-xs mb-3">Hours with saved tasks are locked and cannot be changed.</p>
+            )}
             <div className="space-y-2 mb-4">
               {blocks.map((block, idx) => (
-                <div key={idx} className="flex items-center gap-3">
+                <div key={idx} className={`flex items-center gap-3 ${block.locked ? "opacity-50" : ""}`}>
                   <input
                     type="time"
                     value={block.from}
                     onChange={(e) => updateBlock(idx, "from", e.target.value)}
-                    className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                    disabled={block.locked}
+                    className={`border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] ${block.locked ? "cursor-not-allowed" : ""}`}
                   />
                   <span className="text-white/50">to</span>
                   <input
                     type="time"
                     value={block.to}
                     onChange={(e) => updateBlock(idx, "to", e.target.value)}
-                    className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                    disabled={block.locked}
+                    className={`border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] ${block.locked ? "cursor-not-allowed" : ""}`}
                   />
-                  <button onClick={() => removeBlock(idx)} className="text-red-400 hover:text-red-300 text-lg px-2">✕</button>
+                  {block.locked ? (
+                    <span className="text-yellow-400 text-xs">🔒</span>
+                  ) : (
+                    <button onClick={() => removeBlock(idx)} className="text-red-400 hover:text-red-300 text-lg px-2">✕</button>
+                  )}
                 </div>
               ))}
             </div>
@@ -281,7 +349,7 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
                 <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
                   <th className="px-4 py-3 text-left font-semibold text-white w-[50px]">#</th>
                   <th className="px-4 py-3 text-left font-semibold text-white w-[160px]">Time Slot</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Task Done</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Task Description</th>
                 </tr>
               </thead>
               <tbody>
@@ -292,8 +360,11 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
                       {hour.from} – {hour.to}
                     </td>
                     <td className="px-4 py-3 border-t border-white/10">
-                      {submitted ? (
-                        <span className="text-white/70">{hour.taskDescription}</span>
+                      {submitted || hour.saved ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/70">{hour.taskDescription}</span>
+                          {hour.saved && !submitted && <span className="text-yellow-400 text-xs">🔒</span>}
+                        </div>
                       ) : (
                         <input
                           type="text"
@@ -311,15 +382,22 @@ export default function TaskSubmission({ userEmail }: { userEmail: string }) {
           </div>
         )}
 
-        {/* Submit button */}
+        {/* Save & Submit buttons */}
         {!submitted && hours.length > 0 && (
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving || submitting}
+              className="px-6 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 font-medium transition-all disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Submit Task"}
+            </button>
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || saving}
               className="px-6 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] font-medium transition-all shadow-md disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit Tasks"}
+              {submitting ? "Submitting..." : "Submit for Today"}
             </button>
           </div>
         )}

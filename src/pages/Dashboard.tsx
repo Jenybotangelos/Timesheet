@@ -23,19 +23,28 @@ function getHoursBetween(from: string, to: string): number {
   return (th * 60 + tm - (fh * 60 + fm)) / 60;
 }
 
-function isHourInBlocks(
+// Returns which halves of the hour are active: { first: boolean, second: boolean }
+function getHalfHourStatus(
   hour: number,
   blocks: { from: string; to: string }[]
-): boolean {
-  return blocks.some((b) => {
+): { first: boolean; second: boolean } {
+  const firstStart = hour * 60;
+  const firstEnd = hour * 60 + 30;
+  const secondStart = hour * 60 + 30;
+  const secondEnd = hour * 60 + 60;
+
+  let first = false;
+  let second = false;
+
+  for (const b of blocks) {
     const [fh, fm] = b.from.split(":").map(Number);
     const [th, tm] = b.to.split(":").map(Number);
     const startMin = fh * 60 + fm;
     const endMin = th * 60 + tm;
-    const hourStart = hour * 60;
-    const hourEnd = hourStart + 60;
-    return hourStart < endMin && startMin < hourEnd;
-  });
+    if (firstStart < endMin && startMin < firstEnd) first = true;
+    if (secondStart < endMin && startMin < secondEnd) second = true;
+  }
+  return { first, second };
 }
 
 export default function Dashboard({ userEmail, onLogout }: { userEmail: string; onLogout: () => void }) {
@@ -236,21 +245,34 @@ export default function Dashboard({ userEmail, onLogout }: { userEmail: string; 
               <tbody>
                 {hours.map((h, idx) => (
                   <tr key={h} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
-                    <td className="px-4 py-3.5 font-medium text-white/60 border border-white/10 text-xs">
+                    <td className="px-4 py-0 font-medium text-white/60 border border-white/10 text-xs align-middle">
                       {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
                     </td>
                     {selectedEmployees.map((emp) => {
                       const blocks = getBlocksForEmployee(emp.email);
-                      const active = isHourInBlocks(h, blocks);
+                      const { first, second } = getHalfHourStatus(h, blocks);
                       return (
                         <td
                           key={emp.email}
-                          className={`px-6 py-3.5 text-center border border-white/10 ${
-                            active
-                              ? "bg-gradient-to-br from-[#0078d4] to-[#4fc3f7] shadow-inner"
-                              : ""
-                          }`}
+                          className="p-0 border border-white/10"
                         >
+                          <div className="flex flex-col h-full">
+                            <div
+                              className={`h-[22px] ${
+                                first
+                                  ? "bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]"
+                                  : ""
+                              }`}
+                            />
+                            <div className="border-t border-white/[0.06]" />
+                            <div
+                              className={`h-[22px] ${
+                                second
+                                  ? "bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]"
+                                  : ""
+                              }`}
+                            />
+                          </div>
                         </td>
                       );
                     })}

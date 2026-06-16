@@ -36,13 +36,16 @@ router.get("/", async (req, res) => {
 
     const pool = await getPool();
 
-    // Check if tasks already submitted for this date
+    // Check task status for this date
     const taskCheck = await pool.request()
       .input("email", email as string)
       .input("date", date as string)
-      .query("SELECT COUNT(*) as count FROM timesheet_task_entries WHERE employee_email = @email AND task_date = @date");
+      .query("SELECT TOP 1 status FROM timesheet_task_entries WHERE employee_email = @email AND task_date = @date");
 
-    const submitted = taskCheck.recordset[0].count > 0;
+    const status: "draft" | "submitted" | null = taskCheck.recordset.length > 0
+      ? taskCheck.recordset[0].status
+      : null;
+    const submitted = status === "submitted";
 
     // Check overrides first (already stored as hourly rows)
     const overrides = await pool.request()
@@ -71,7 +74,7 @@ router.get("/", async (req, res) => {
           task_description: r.task_description || "",
         };
       });
-      return res.json({ source: "override", submitted, hours });
+      return res.json({ source: "override", submitted, status, hours });
     }
 
     // Fall back to default blocks — convert to hourly
@@ -100,18 +103,18 @@ router.get("/", async (req, res) => {
       }
     }
 
-    res.json({ source: "default", submitted, hours });
+    res.json({ source: "default", submitted, status, hours });
   } catch (err) {
     console.error("Error fetching tasks:", err);
     res.status(500).json({ error: "Failed to fetch tasks" });
   }
 });
 
-// POST /api/tasks — One-time submit: save hourly overrides + task entries
-// Body: { email: "jeny@company.com", date: "2026-06-04", hours: [{ from: "04:00", to: "05:00", taskDescription: "Task A" }, ...] }
+// POST /api/tasks — Save draft or final submit
+// Body: { email, date, hours: [{ from, to, taskDescription }], action: "save" | "submit" }
 router.post("/", async (req, res) => {
   try {
-    const { email, date, hours } = req.body;
+    const { email, date, hours, action = "submit" } = req.body;
 
     if (!email || !date || !Array.isArray(hours)) {
       return res.status(400).json({ error: "email, date, and hours array are required" });
@@ -119,49 +122,105 @@ router.post("/", async (req, res) => {
 
     const pool = await getPool();
 
-    // Check if already submitted for this date
+    // Check if already submitted (final) for this date
     const existing = await pool.request()
       .input("email", email)
       .input("date", date)
-      .query("SELECT COUNT(*) as count FROM timesheet_task_entries WHERE employee_email = @email AND task_date = @date");
+      .query("SELECT TOP 1 status FROM timesheet_task_entries WHERE employee_email = @email AND task_date = @date");
 
-    if (existing.recordset[0].count > 0) {
-      return res.status(409).json({ error: "Tasks already submitted for this date. Cannot re-submit." });
+    if (existing.recordset.length > 0 && existing.recordset[0].status === "submitted") {
+      return res.status(409).json({ error: "Tasks already submitted for this date. Cannot edit." });
     }
+
+    // For final submit, all tasks must be filled
+    if (action === "submit") {
+      const emptyTask = hours.find((h: any) => !h.taskDescription || !h.taskDescription.trim());
+      if (emptyTask) {
+        return res.status(400).json({ error: "All task descriptions must be filled before submitting." });
+      }
+    }
+
+    const status = action === "submit" ? "submitted" : "draft";
 
     const transaction = pool.transaction();
     await transaction.begin();
 
     try {
-      // Delete any existing overrides for this date (in case override was set before)
-      await transaction.request()
+      // Get existing overrides with their task entry status
+      const existingOverrides = await transaction.request()
         .input("email", email)
         .input("date", date)
-        .query("DELETE FROM timesheet_date_overrides WHERE employee_email = @email AND override_date = @date");
+        .query(
+          `SELECT o.id, o.from_time_utc, o.to_time_utc, t.id as task_id
+           FROM timesheet_date_overrides o
+           LEFT JOIN timesheet_task_entries t ON t.override_id = o.id
+           WHERE o.employee_email = @email AND o.override_date = @date
+           ORDER BY o.from_time_utc`
+        );
 
-      // Insert each hour as override + task entry
+      // Build a map of existing overrides by time slot
+      const overrideMap = new Map<string, { id: number; hasTask: boolean; taskId: number | null }>();
+      for (const r of existingOverrides.recordset) {
+        const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc);
+        const toRaw = r.to_time_utc instanceof Date ? r.to_time_utc.toISOString() : String(r.to_time_utc);
+        const fromStr = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
+        const toStr = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
+        overrideMap.set(`${fromStr}-${toStr}`, { id: r.id, hasTask: r.task_id !== null, taskId: r.task_id });
+      }
+
+      let savedCount = 0;
+
       for (const hour of hours) {
-        // Insert override hour
-        const insertResult = await transaction.request()
-          .input("email", email)
-          .input("date", date)
-          .input("from", hour.from)
-          .input("to", hour.to)
-          .query("INSERT INTO timesheet_date_overrides (employee_email, override_date, from_time_utc, to_time_utc) OUTPUT INSERTED.id VALUES (@email, @date, @from, @to)");
+        const key = `${hour.from}-${hour.to}`;
+        const existing = overrideMap.get(key);
 
-        const overrideId = insertResult.recordset[0].id;
+        if (existing && existing.hasTask) {
+          // Already has a saved task — skip (locked), but update status if submitting
+          if (action === "submit") {
+            await transaction.request()
+              .input("taskId", existing.taskId)
+              .input("status", "submitted")
+              .query("UPDATE timesheet_task_entries SET status = @status WHERE id = @taskId");
+          }
+          savedCount++;
+          continue;
+        }
 
-        // Insert task entry linked to override
+        // Only insert task entry if description is filled
+        if (!hour.taskDescription || !hour.taskDescription.trim()) {
+          // For submit this shouldn't happen (validated above), for save just skip
+          continue;
+        }
+
+        let overrideId: number;
+        if (existing) {
+          // Override exists but no task — use its ID
+          overrideId = existing.id;
+        } else {
+          // No override yet — insert one
+          const insertResult = await transaction.request()
+            .input("email", email)
+            .input("date", date)
+            .input("from", hour.from)
+            .input("to", hour.to)
+            .query("INSERT INTO timesheet_date_overrides (employee_email, override_date, from_time_utc, to_time_utc) OUTPUT INSERTED.id VALUES (@email, @date, @from, @to)");
+          overrideId = insertResult.recordset[0].id;
+        }
+
+        // Insert task entry
         await transaction.request()
           .input("email", email)
           .input("date", date)
-          .input("taskDescription", hour.taskDescription || "")
+          .input("taskDescription", hour.taskDescription)
           .input("overrideId", overrideId)
-          .query("INSERT INTO timesheet_task_entries (employee_email, task_date, task_description, submitted_at_utc, override_id) VALUES (@email, @date, @taskDescription, GETUTCDATE(), @overrideId)");
+          .input("status", status)
+          .query("INSERT INTO timesheet_task_entries (employee_email, task_date, task_description, submitted_at_utc, override_id, status) VALUES (@email, @date, @taskDescription, GETUTCDATE(), @overrideId, @status)");
+        savedCount++;
       }
 
       await transaction.commit();
-      res.status(201).json({ message: "Tasks submitted", count: hours.length });
+      const msg = action === "submit" ? "Tasks submitted" : `Draft saved (${savedCount} tasks)`;
+      res.status(201).json({ message: msg, count: savedCount, status });
     } catch (err) {
       await transaction.rollback();
       throw err;
