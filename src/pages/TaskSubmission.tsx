@@ -512,6 +512,7 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
                         </tr>
                       </tbody>
                     ) : (
+                    <>
                     <tbody>
                       {filtered.map((t: any, idx: number) => {
                         const fromRaw = t.from_time_utc instanceof Date ? t.from_time_utc.toISOString() : String(t.from_time_utc || "");
@@ -543,6 +544,31 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
                         );
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr className="bg-white/10 border-t-2 border-white/20">
+                        <td colSpan={2} className="px-4 py-3 text-white font-semibold text-sm">Total Hours</td>
+                        <td colSpan={4} className="px-4 py-3 text-[#4fc3f7] font-bold text-sm">
+                          {(() => {
+                            const totalMinutes = filtered.reduce((sum: number, t: any) => {
+                              const fromRaw = t.from_time_utc instanceof Date ? t.from_time_utc.toISOString() : String(t.from_time_utc || "");
+                              const toRaw = t.to_time_utc instanceof Date ? t.to_time_utc.toISOString() : String(t.to_time_utc || "");
+                              const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
+                              const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
+                              if (!fromUtc || !toUtc) return sum;
+                              const [fh, fm] = fromUtc.split(":").map(Number);
+                              const [th, tm] = toUtc.split(":").map(Number);
+                              let diff = (th * 60 + tm) - (fh * 60 + fm);
+                              if (diff < 0) diff += 1440; // handle overnight
+                              return sum + diff;
+                            }, 0);
+                            const hrs = Math.floor(totalMinutes / 60);
+                            const mins = totalMinutes % 60;
+                            return mins > 0 ? `${hrs} hrs ${mins} mins` : `${hrs} hrs`;
+                          })()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                    </>
                     )}
                   </table>
                 </div>
