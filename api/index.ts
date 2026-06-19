@@ -6,6 +6,7 @@ import overridesRouter from "../server/src/routes/overrides";
 import tasksRouter from "../server/src/routes/tasks";
 import scheduleRouter from "../server/src/routes/schedule";
 import authRouter from "../server/src/routes/auth";
+import projectsRouter from "../server/src/routes/projects";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/api/overrides", overridesRouter);
 app.use("/api/tasks", tasksRouter);
 app.use("/api/schedule", scheduleRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/projects", projectsRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {
