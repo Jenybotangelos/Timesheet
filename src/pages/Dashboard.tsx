@@ -47,7 +47,7 @@ function getHalfHourStatus(
   return { first, second };
 }
 
-export default function Dashboard({ userEmail, onLogout }: { userEmail: string; onLogout: () => void }) {
+export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail: string; userRole: string; onLogout: () => void }) {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
@@ -224,6 +224,14 @@ export default function Dashboard({ userEmail, onLogout }: { userEmail: string; 
           >
             Submit Task
           </button>
+          {userRole === "admin" && (
+            <button
+              onClick={() => navigate("/projects")}
+              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg hover:from-purple-400 hover:to-purple-600 text-sm font-medium transition-all shadow-md"
+            >
+              Projects
+            </button>
+          )}
         </div>
 
         {/* Calendar Grid */}

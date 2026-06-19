@@ -77,7 +77,7 @@ router.post("/login", async (req, res) => {
     // Check if employee already exists
     const existing = await pool.request()
       .input("email", email)
-      .query("SELECT id, name, email FROM timesheet_employees WHERE email = @email");
+      .query("SELECT id, name, email, role FROM timesheet_employees WHERE email = @email");
 
     if (existing.recordset.length > 0) {
       // Already registered — return their info
@@ -110,7 +110,7 @@ router.post("/login", async (req, res) => {
     // Return the new employee
     const newEmp = await pool.request()
       .input("email", email)
-      .query("SELECT id, name, email FROM timesheet_employees WHERE email = @email");
+      .query("SELECT id, name, email, role FROM timesheet_employees WHERE email = @email");
 
     res.json(newEmp.recordset[0]);
   } catch (err) {

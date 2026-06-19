@@ -4,6 +4,7 @@ import { useMsal } from "@azure/msal-react"
 import Dashboard from "./pages/Dashboard"
 import WorkingHoursEditor from "./pages/WorkingHoursEditor"
 import TaskSubmission from "./pages/TaskSubmission"
+import Projects from "./pages/Projects"
 import Login from "./pages/Login"
 
 const API_BASE = "/api";
@@ -12,6 +13,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  role: string;
 }
 
 function App() {
@@ -64,6 +66,29 @@ function App() {
     });
   }, []);
 
+  // Refresh user data from backend on load (picks up role changes for already-signed-in users)
+  useEffect(() => {
+    async function refreshUser() {
+      const saved = localStorage.getItem("tasksheet_user");
+      if (!saved) return;
+      const cachedUser = JSON.parse(saved);
+      try {
+        const res = await fetch(`${API_BASE}/employees`);
+        if (res.ok) {
+          const employees = await res.json();
+          const updated = employees.find((e: any) => e.email === cachedUser.email);
+          if (updated) {
+            localStorage.setItem("tasksheet_user", JSON.stringify(updated));
+            setUser(updated);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to refresh user data:", err);
+      }
+    }
+    refreshUser();
+  }, []);
+
   function handleLogout() {
     localStorage.removeItem("tasksheet_user");
     setUser(null);
@@ -84,9 +109,12 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<Dashboard userEmail={user.email} onLogout={handleLogout} />} />
+      <Route path="/" element={<Dashboard userEmail={user.email} userRole={user.role} onLogout={handleLogout} />} />
       <Route path="/edit" element={<WorkingHoursEditor userEmail={user.email} />} />
-      <Route path="/submit" element={<TaskSubmission userEmail={user.email} />} />
+      <Route path="/submit" element={<TaskSubmission userEmail={user.email} userRole={user.role} />} />
+      {user.role === "admin" && (
+        <Route path="/projects" element={<Projects userEmail={user.email} />} />
+      )}
     </Routes>
   )
 }

@@ -52,7 +52,7 @@ router.get("/", async (req, res) => {
       .input("email", email as string)
       .input("date", date as string)
       .query(
-        `SELECT o.id, o.from_time_utc, o.to_time_utc, t.task_description
+        `SELECT o.id, o.from_time_utc, o.to_time_utc, t.task_description, t.project_id
          FROM timesheet_date_overrides o
          LEFT JOIN timesheet_task_entries t ON t.override_id = o.id
          WHERE o.employee_email = @email AND o.override_date = @date
@@ -72,6 +72,7 @@ router.get("/", async (req, res) => {
           from_time_utc: fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5),
           to_time_utc: toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5),
           task_description: r.task_description || "",
+          project_id: r.project_id || null,
         };
       });
       return res.json({ source: "override", submitted, status, hours });
@@ -214,7 +215,8 @@ router.post("/", async (req, res) => {
           .input("taskDescription", hour.taskDescription)
           .input("overrideId", overrideId)
           .input("status", status)
-          .query("INSERT INTO timesheet_task_entries (employee_email, task_date, task_description, submitted_at_utc, override_id, status) VALUES (@email, @date, @taskDescription, GETUTCDATE(), @overrideId, @status)");
+          .input("projectId", hour.projectId || null)
+          .query("INSERT INTO timesheet_task_entries (employee_email, task_date, task_description, submitted_at_utc, override_id, status, project_id) VALUES (@email, @date, @taskDescription, GETUTCDATE(), @overrideId, @status, @projectId)");
         savedCount++;
       }
 
@@ -228,6 +230,51 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("Error saving tasks:", err);
     res.status(500).json({ error: "Failed to save tasks" });
+  }
+});
+
+// GET /api/tasks/weekly?startDate=2026-06-15&endDate=2026-06-21&email=admin@...
+// Returns all employees' submitted tasks for the week (admin only)
+router.get("/weekly", async (req, res) => {
+  try {
+    const { startDate, endDate, email } = req.query;
+    if (!startDate || !endDate || !email) {
+      return res.status(400).json({ error: "startDate, endDate, and email are required" });
+    }
+
+    const pool = await getPool();
+
+    // Check if requesting user is admin
+    const adminCheck = await pool.request()
+      .input("email", email as string)
+      .query("SELECT role FROM timesheet_employees WHERE email = @email");
+
+    if (adminCheck.recordset.length === 0 || adminCheck.recordset[0].role !== "admin") {
+      return res.status(403).json({ error: "Only admins can view weekly reports" });
+    }
+
+    // Get all task entries for the date range with employee names and project names
+    const result = await pool.request()
+      .input("startDate", startDate as string)
+      .input("endDate", endDate as string)
+      .query(
+        `SELECT 
+           t.employee_email, e.name AS employee_name,
+           t.task_date, t.task_description, t.status, t.project_id,
+           p.name AS project_name,
+           o.from_time_utc, o.to_time_utc
+         FROM timesheet_task_entries t
+         JOIN timesheet_employees e ON e.email = t.employee_email
+         LEFT JOIN timesheet_projects p ON p.id = t.project_id
+         LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
+         WHERE t.task_date >= @startDate AND t.task_date <= @endDate
+         ORDER BY e.name, t.task_date, o.from_time_utc`
+      );
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error("Error fetching weekly report:", err);
+    res.status(500).json({ error: "Failed to fetch weekly report" });
   }
 });
 

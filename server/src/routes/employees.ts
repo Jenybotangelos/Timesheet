@@ -8,7 +8,7 @@ router.get("/", async (_req, res) => {
   try {
     const pool = await getPool();
     const result = await pool.request().query(
-      "SELECT id, name, email FROM timesheet_employees ORDER BY name"
+      "SELECT id, name, email, role FROM timesheet_employees ORDER BY name"
     );
     res.json(result.recordset);
   } catch (err) {

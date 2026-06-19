@@ -7,6 +7,7 @@ import overridesRouter from "./routes/overrides";
 import tasksRouter from "./routes/tasks";
 import scheduleRouter from "./routes/schedule";
 import authRouter from "./routes/auth";
+import projectsRouter from "./routes/projects";
 
 // Load env variables
 dotenv.config();
@@ -24,6 +25,7 @@ app.use("/api/overrides", overridesRouter);
 app.use("/api/tasks", tasksRouter);
 app.use("/api/schedule", scheduleRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/projects", projectsRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {
