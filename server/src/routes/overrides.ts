@@ -124,6 +124,16 @@ router.post("/", async (req, res) => {
       hourRows.push(...hours);
     }
 
+    // Check for duplicate hour slots
+    const hourSet = new Set<string>();
+    for (const hr of hourRows) {
+      const key = `${hr.from}-${hr.to}`;
+      if (hourSet.has(key)) {
+        return res.status(400).json({ error: `Duplicate hour slot found: ${hr.from} - ${hr.to}. Please remove overlapping blocks.` });
+      }
+      hourSet.add(key);
+    }
+
     const pool = await getPool();
     const transaction = pool.transaction();
     await transaction.begin();
