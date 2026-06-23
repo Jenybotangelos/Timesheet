@@ -3,6 +3,20 @@ import { getPool } from "../db";
 
 const router = Router();
 
+function istToUtcTime(istTime: string): string {
+  const [h, m] = istTime.split(":").map(Number);
+  let totalMin = h * 60 + m - 330;
+  if (totalMin < 0) totalMin += 1440;
+  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+
+function utcToIst(utcTime: string): string {
+  const [h, m] = utcTime.split(":").map(Number);
+  let totalMin = h * 60 + m + 330;
+  if (totalMin >= 1440) totalMin -= 1440;
+  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+
 // GET /api/default-blocks?email=xxx — Get default blocks for a person
 router.get("/", async (req, res) => {
   try {
@@ -24,13 +38,21 @@ router.get("/", async (req, res) => {
     // If no default blocks exist, return fallback: 9:00-13:00 & 14:00-18:00 IST
     if (result.recordset.length === 0) {
       return res.json([
-        { id: null, from_time_utc: "03:30", to_time_utc: "07:30" },
-        { id: null, from_time_utc: "08:30", to_time_utc: "12:30" },
+        { id: null, from_time_ist: "09:00", to_time_ist: "13:00" },
+        { id: null, from_time_ist: "14:00", to_time_ist: "18:00" },
       ]);
     }
 
-    res.json(result.recordset);
-    console.log(`Fetched default blocks for ${email}:`, result.recordset);
+    const blocks = result.recordset.map((r: any) => {
+      const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc);
+      const toRaw = r.to_time_utc instanceof Date ? r.to_time_utc.toISOString() : String(r.to_time_utc);
+      const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
+      const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
+      return { id: r.id, from_time_ist: utcToIst(fromUtc), to_time_ist: utcToIst(toUtc) };
+    });
+
+    res.json(blocks);
+    console.log(`Fetched default blocks for ${email}:`, blocks);
   } catch (err) {
     console.error("Error fetching default blocks:", err);
     res.status(500).json({ error: "Failed to fetch default blocks" });
@@ -83,23 +105,23 @@ router.post("/", async (req, res) => {
           .query("DELETE FROM timesheet_default_blocks WHERE id = @id");
       }
 
-      // Update existing blocks
+      // Update existing blocks (incoming from/to are IST, convert to UTC)
       for (const block of toUpdate) {
         await transaction.request()
           .input("id", block.id)
-          .input("from", block.from)
-          .input("to", block.to)
+          .input("from", istToUtcTime(block.from))
+          .input("to", istToUtcTime(block.to))
           .query(
             "UPDATE timesheet_default_blocks SET from_time_utc = @from, to_time_utc = @to WHERE id = @id"
           );
       }
 
-      // Insert new blocks
+      // Insert new blocks (incoming from/to are IST, convert to UTC)
       for (const block of toInsert) {
         await transaction.request()
           .input("email", email)
-          .input("from", block.from)
-          .input("to", block.to)
+          .input("from", istToUtcTime(block.from))
+          .input("to", istToUtcTime(block.to))
           .query(
             "INSERT INTO timesheet_default_blocks (employee_email, from_time_utc, to_time_utc) VALUES (@email, @from, @to)"
           );

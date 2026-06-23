@@ -3,30 +3,71 @@ import { getPool } from "../db";
 
 const router = Router();
 
+// IST offset: UTC time >= 18:30 means it belongs to the NEXT IST day
+// So when storing with an IST date, the UTC date should be istDate - 1
+function getUtcDate(istDate: string, utcTime: string): string {
+  const [h, m] = utcTime.split(":").map(Number);
+  if (h * 60 + m >= 1110) { // 18:30
+    const d = new Date(istDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().split("T")[0];
+  }
+  return istDate;
+}
+
+// Get the previous day string
+function prevDay(date: string): string {
+  const d = new Date(date + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().split("T")[0];
+}
+
+// Convert IST time to UTC time (combined date+time)
+function istToUtcDateTime(istDate: string, istTime: string): { date: string; time: string } {
+  const [h, m] = istTime.split(":").map(Number);
+  let totalMin = h * 60 + m - 330; // -5:30
+  let date = istDate;
+  if (totalMin < 0) {
+    totalMin += 1440;
+    const d = new Date(istDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - 1);
+    date = d.toISOString().split("T")[0];
+  }
+  const time = `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+  return { date, time };
+}
+
+// Convert UTC time to IST time
+function utcToIst(utcTime: string): string {
+  const [h, m] = utcTime.split(":").map(Number);
+  let totalMin = h * 60 + m + 330; // +5:30
+  if (totalMin >= 1440) totalMin -= 1440;
+  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+
 // Helper: convert block (from, to) in UTC HH:mm to individual 1-hour rows
 // e.g., "04:30" to "07:30" → ["04:30-05:30", "05:30-06:30", "06:30-07:30"]
+// Handles midnight wrap-around (e.g., "23:30" to "00:30")
 function blockToHours(from: string, to: string): { from: string; to: string }[] {
   const [fh, fm] = from.split(":").map(Number);
   const [th, tm] = to.split(":").map(Number);
   const startMin = fh * 60 + fm;
-  const endMin = th * 60 + tm;
+  let endMin = th * 60 + tm;
+
+  // Handle midnight wrap-around
+  if (endMin <= startMin) {
+    endMin += 1440;
+  }
 
   const hours: { from: string; to: string }[] = [];
   for (let m = startMin; m < endMin; m += 60) {
     const nextM = Math.min(m + 60, endMin);
-    if (nextM - m < 60 && nextM === endMin) {
-      // Last partial chunk — still include it as the remainder
-      // Only add if there's something left
-      if (nextM > m) {
-        hours.push({
-          from: `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`,
-          to: `${String(Math.floor(nextM / 60)).padStart(2, "0")}:${String(nextM % 60).padStart(2, "0")}`,
-        });
-      }
-    } else {
+    if (nextM > m) {
+      const fromMin = m % 1440;
+      const toMin = nextM % 1440;
       hours.push({
-        from: `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`,
-        to: `${String(Math.floor(nextM / 60)).padStart(2, "0")}:${String(nextM % 60).padStart(2, "0")}`,
+        from: `${String(Math.floor(fromMin / 60)).padStart(2, "0")}:${String(fromMin % 60).padStart(2, "0")}`,
+        to: `${String(Math.floor(toMin / 60)).padStart(2, "0")}:${String(toMin % 60).padStart(2, "0")}`,
       });
     }
   }
@@ -69,14 +110,19 @@ router.get("/", async (req, res) => {
     }
 
     const pool = await getPool();
+    const prevDate = prevDay(date as string);
     const result = await pool.request()
       .input("email", email as string)
       .input("date", date as string)
+      .input("prevDate", prevDate)
       .query(
         `SELECT id, from_time_utc, to_time_utc 
          FROM timesheet_date_overrides
-         WHERE employee_email = @email AND override_date = @date
-         ORDER BY from_time_utc`
+         WHERE employee_email = @email AND (
+           (override_date = @date AND from_time_utc < '18:30:00') OR
+           (override_date = @prevDate AND from_time_utc >= '18:30:00')
+         )
+         ORDER BY CASE WHEN from_time_utc >= '18:30:00' THEN 0 ELSE 1 END, from_time_utc`
       );
 
     // If no overrides exist, return empty array
@@ -92,15 +138,23 @@ router.get("/", async (req, res) => {
       const toRaw = r.to_time_utc instanceof Date
         ? r.to_time_utc.toISOString()
         : String(r.to_time_utc);
+      const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
+      const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
       return {
         id: r.id,
-        from_time_utc: fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5),
-        to_time_utc: toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5),
+        from_time_utc: fromUtc,
+        to_time_utc: toUtc,
       };
     });
 
     const blocks = hoursToBlocks(rows);
-    res.json(blocks);
+    // Return IST times to frontend
+    const istBlocks = blocks.map((b) => ({
+      ...b,
+      from_time_ist: utcToIst(b.from_time_utc),
+      to_time_ist: utcToIst(b.to_time_utc),
+    }));
+    res.json(istBlocks);
   } catch (err) {
     console.error("Error fetching overrides:", err);
     res.status(500).json({ error: "Failed to fetch overrides" });
@@ -117,11 +171,15 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "email, date, and blocks array are required" });
     }
 
-    // Convert blocks to individual hour rows
-    const hourRows: { from: string; to: string }[] = [];
+    // Convert IST blocks to UTC hour rows
+    const hourRows: { from: string; to: string; utcDate: string }[] = [];
     for (const block of blocks) {
-      const hours = blockToHours(block.from, block.to);
-      hourRows.push(...hours);
+      const fromUtc = istToUtcDateTime(date, block.from);
+      const toUtc = istToUtcDateTime(date, block.to);
+      const hours = blockToHours(fromUtc.time, toUtc.time);
+      for (const hr of hours) {
+        hourRows.push({ ...hr, utcDate: getUtcDate(date, hr.from) });
+      }
     }
 
     // Check for duplicate hour slots
@@ -139,17 +197,22 @@ router.post("/", async (req, res) => {
     await transaction.begin();
 
     try {
-      // Get existing overrides for this email + date, with task entry info
+      // Get existing overrides for this IST date (query both dates)
+      const pDate = prevDay(date);
       const existing = await transaction.request()
         .input("email", email)
         .input("date", date)
+        .input("prevDate", pDate)
         .query(
-          `SELECT o.id, o.from_time_utc, o.to_time_utc, 
-                  CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END as has_task
+          `SELECT o.id, o.from_time_utc, o.to_time_utc, o.override_date,
+                  t.id as task_id, t.status as task_status
            FROM timesheet_date_overrides o
            LEFT JOIN timesheet_task_entries t ON t.override_id = o.id
-           WHERE o.employee_email = @email AND o.override_date = @date
-           ORDER BY o.from_time_utc`
+           WHERE o.employee_email = @email AND (
+             (o.override_date = @date AND o.from_time_utc < '18:30:00') OR
+             (o.override_date = @prevDate AND o.from_time_utc >= '18:30:00')
+           )
+           ORDER BY CASE WHEN o.from_time_utc >= '18:30:00' THEN 0 ELSE 1 END, o.from_time_utc`
         );
 
       const existingRows = existing.recordset.map((r: any) => {
@@ -163,65 +226,84 @@ router.post("/", async (req, res) => {
           id: r.id,
           from: fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5),
           to: toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5),
-          hasTask: r.has_task === 1,
+          taskId: r.task_id,
+          taskStatus: r.task_status,
+          isSubmitted: r.task_status === "submitted",
         };
       });
 
+      // Build a map of existing overrides by time slot key (keep first, track duplicates)
+      const existingMap = new Map<string, typeof existingRows[0]>();
+      const duplicateRows: typeof existingRows = [];
+      for (const ex of existingRows) {
+        const key = `${ex.from}-${ex.to}`;
+        if (existingMap.has(key)) {
+          duplicateRows.push(ex); // duplicate — mark for cleanup
+        } else {
+          existingMap.set(key, ex);
+        }
+      }
+
+      // Build a set of desired time slots
+      const desiredSet = new Set<string>();
+      for (const hr of hourRows) {
+        desiredSet.add(`${hr.from}-${hr.to}`);
+      }
+
       let inserted = 0;
-      let updated = 0;
       let deleted = 0;
       let skipped = 0;
 
-      // Update rows that exist at same index position
-      const updateCount = Math.min(existingRows.length, hourRows.length);
-      for (let i = 0; i < updateCount; i++) {
-        const ex = existingRows[i];
-        const hr = hourRows[i];
-        if (ex.from !== hr.from || ex.to !== hr.to) {
-          if (ex.hasTask) {
-            skipped++;
-            continue; // Skip — has task entry, cannot change
-          }
-          await transaction.request()
-            .input("id", ex.id)
-            .input("from", hr.from)
-            .input("to", hr.to)
-            .query("UPDATE timesheet_date_overrides SET from_time_utc = @from, to_time_utc = @to WHERE id = @id");
-          updated++;
-        }
-      }
-
-      // Insert new rows (if incoming has more than existing)
-      for (let i = existingRows.length; i < hourRows.length; i++) {
-        const hr = hourRows[i];
+      // Clean up duplicate override rows first
+      for (const dup of duplicateRows) {
+        if (dup.isSubmitted) continue;
         await transaction.request()
-          .input("email", email)
-          .input("date", date)
-          .input("from", hr.from)
-          .input("to", hr.to)
-          .query(
-            "INSERT INTO timesheet_date_overrides (employee_email, override_date, from_time_utc, to_time_utc) VALUES (@email, @date, @from, @to)"
-          );
-        inserted++;
-      }
-
-      // Delete extra rows (if existing has more than incoming) — skip rows with tasks
-      for (let i = hourRows.length; i < existingRows.length; i++) {
-        if (existingRows[i].hasTask) {
-          skipped++;
-          continue;
-        }
+          .input("overrideId", dup.id)
+          .query("DELETE FROM timesheet_task_entries WHERE override_id = @overrideId");
         await transaction.request()
-          .input("id", existingRows[i].id)
+          .input("id", dup.id)
           .query("DELETE FROM timesheet_date_overrides WHERE id = @id");
         deleted++;
+      }
+
+      // Insert new hour rows that don't already exist
+      for (const hr of hourRows) {
+        const key = `${hr.from}-${hr.to}`;
+        if (!existingMap.has(key)) {
+          await transaction.request()
+            .input("email", email)
+            .input("utcDate", hr.utcDate)
+            .input("from", hr.from)
+            .input("to", hr.to)
+            .query(
+              "INSERT INTO timesheet_date_overrides (employee_email, override_date, from_time_utc, to_time_utc) VALUES (@email, @utcDate, @from, @to)"
+            );
+          inserted++;
+        }
+      }
+
+      // Delete existing rows that are NOT in the desired set
+      for (const [key, ex] of existingMap) {
+        if (!desiredSet.has(key)) {
+          if (ex.isSubmitted) {
+            skipped++;
+            continue; // Never delete submitted tasks
+          }
+          // Delete ALL task entries linked to this override (not just one)
+          await transaction.request()
+            .input("overrideId", ex.id)
+            .query("DELETE FROM timesheet_task_entries WHERE override_id = @overrideId");
+          await transaction.request()
+            .input("id", ex.id)
+            .query("DELETE FROM timesheet_date_overrides WHERE id = @id");
+          deleted++;
+        }
       }
 
       await transaction.commit();
       res.json({
         message: "Override saved",
         inserted,
-        updated,
         deleted,
       });
     } catch (err) {

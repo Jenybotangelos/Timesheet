@@ -239,7 +239,12 @@ export default function Projects({ userEmail }: { userEmail: string }) {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-white font-semibold text-lg">{project.name}</h3>
+                      <h3
+                        onClick={() => navigate(`/projects/view?id=${project.id}&name=${encodeURIComponent(project.name)}`)}
+                        className="text-white font-semibold text-lg cursor-pointer hover:text-[#4fc3f7] transition-colors"
+                      >
+                        {project.name}
+                      </h3>
                       {project.is_active ? (
                         <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs font-medium border border-green-500/30">
                           Active
@@ -259,7 +264,7 @@ export default function Projects({ userEmail }: { userEmail: string }) {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => openEditForm(project)}
+                      onClick={() => navigate(`/projects/edit?id=${project.id}&name=${encodeURIComponent(project.name)}`)}
                       className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-xs font-medium transition-all"
                     >
                       Edit

@@ -16,32 +16,6 @@ function getHoursBetween(from: string, to: string): number {
   return Math.max(0, (th * 60 + tm - (fh * 60 + fm)) / 60);
 }
 
-// Convert UTC time to IST HH:mm (handles both "HH:mm" and ISO "1970-01-01T04:30:00.000Z")
-function utcToIst(utcTime: string): string {
-  let h: number, m: number;
-  if (utcTime.includes("T")) {
-    const date = new Date(utcTime);
-    h = date.getUTCHours();
-    m = date.getUTCMinutes();
-  } else {
-    [h, m] = utcTime.split(":").map(Number);
-  }
-  let totalMin = h * 60 + m + 330; // +5:30
-  if (totalMin >= 1440) totalMin -= 1440;
-  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
-}
-
-// Convert IST HH:mm to UTC HH:mm
-function istToUtc(istTime: string): string {
-  const [h, m] = istTime.split(":").map(Number);
-  // IST is UTC+5:30
-  let utcH = h - 5;
-  let utcM = m - 30;
-  if (utcM < 0) { utcM += 60; utcH -= 1; }
-  if (utcH < 0) utcH += 24;
-  return `${String(utcH).padStart(2, "0")}:${String(utcM).padStart(2, "0")}`;
-}
-
 export default function WorkingHoursEditor({ userEmail }: { userEmail: string }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"default" | "override">("default");
@@ -76,8 +50,8 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
       const data = await res.json();
       const mapped: Block[] = data.map((b: any) => ({
         id: b.id,
-        from: b.from_time_utc === "00:00" ? "00:00" : utcToIst(b.from_time_utc),
-        to: b.to_time_utc === "00:00" ? "00:00" : utcToIst(b.to_time_utc),
+        from: b.from_time_ist || "00:00",
+        to: b.to_time_ist || "00:00",
       }));
       if (tab === "default") {
         setBlocks(mapped.length > 0 ? mapped : [{ from: "00:00", to: "00:00" }]);
@@ -141,11 +115,38 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
     return null;
   }
 
+  // Check for duplicate hour slots when blocks are expanded into hours
+  function hasDuplicateHours(blockList: Block[]): string | null {
+    const hourSet = new Set<string>();
+    for (const block of blockList) {
+      const [fh, fm] = block.from.split(":").map(Number);
+      const [th, tm] = block.to.split(":").map(Number);
+      const startMin = fh * 60 + fm;
+      const endMin = th * 60 + tm;
+      for (let m = startMin; m < endMin; m += 60) {
+        const nextM = Math.min(m + 60, endMin);
+        const key = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}-${String(Math.floor(nextM / 60)).padStart(2, "0")}:${String(nextM % 60).padStart(2, "0")}`;
+        if (hourSet.has(key)) {
+          return `Duplicate hour slot found: ${key}`;
+        }
+        hourSet.add(key);
+      }
+    }
+    return null;
+  }
+
   async function save() {
     // Validate no overlapping blocks
     const overlap = hasOverlap(blocks);
     if (overlap) {
       alert("Overlap detected: " + overlap);
+      return;
+    }
+
+    // Validate no duplicate hour slots
+    const duplicate = hasDuplicateHours(blocks);
+    if (duplicate) {
+      alert("Duplicate detected: " + duplicate);
       return;
     }
 
@@ -167,8 +168,8 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
           email: userEmail,
           blocks: blocks.map((b) => ({
             ...(b.id ? { id: b.id } : {}),
-            from: istToUtc(b.from),
-            to: istToUtc(b.to),
+            from: b.from,
+            to: b.to,
           })),
         };
       } else {
@@ -178,8 +179,8 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
           date: overrideDate,
           blocks: blocks.map((b) => ({
             ...(b.id ? { id: b.id } : {}),
-            from: istToUtc(b.from),
-            to: istToUtc(b.to),
+            from: b.from,
+            to: b.to,
           })),
         };
       }

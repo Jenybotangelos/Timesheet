@@ -1,8 +1,9 @@
 import dotenv from "dotenv";
 import sql from "mssql";
+import path from "path";
 
-// Load .env file
-dotenv.config();
+// Load .env file from server directory
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 // Build config from environment variables
 const dbConfig: sql.config = {

@@ -4,22 +4,6 @@ import { useNavigate } from "react-router-dom";
 const API_BASE = "/api";
 
 
-// Convert UTC HH:mm to IST HH:mm
-function utcToIst(utc: string): string {
-  const [h, m] = utc.split(":").map(Number);
-  let totalMin = h * 60 + m + 330; // +5:30
-  if (totalMin >= 1440) totalMin -= 1440;
-  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
-}
-
-// Convert IST HH:mm to UTC HH:mm
-function istToUtc(ist: string): string {
-  const [h, m] = ist.split(":").map(Number);
-  let totalMin = h * 60 + m - 330; // -5:30
-  if (totalMin < 0) totalMin += 1440;
-  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
-}
-
 // Check if a date is editable (today and yesterday only)
 function isDateEditable(date: string): boolean {
   const selectedDate = new Date(date);
@@ -111,9 +95,9 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
 
       setStatus(data.status || null);
       setHours(
-        data.hours.map((h: any) => ({
-          from: utcToIst(h.from_time_utc),
-          to: utcToIst(h.to_time_utc),
+        (data.hours || []).map((h: any) => ({
+          from: h.from_time_ist,
+          to: h.to_time_ist,
           taskDescription: h.task_description || "",
           projectId: h.project_id || null,
           saved: !!h.task_description,
@@ -230,14 +214,41 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   }
 
   async function saveBlocks() {
+    // Check for overnight blocks (to < from, but allow to = 00:00 as midnight end-of-day)
+    for (const b of blocks) {
+      const [fh, fm] = b.from.split(":").map(Number);
+      const [th, tm] = b.to.split(":").map(Number);
+      const fromMin = fh * 60 + fm;
+      const toMin = th * 60 + tm;
+      if (toMin <= fromMin && toMin !== 0) {
+        alert(`Time slot ${b.from} to ${b.to} crosses midnight. Please split it — add hours before midnight to today and hours after midnight to the next day.`);
+        return;
+      }
+    }
+
+    // Check for overlapping blocks
+    const sorted = [...blocks].sort((a, b) => {
+      const [ah, am] = a.from.split(":").map(Number);
+      const [bh, bm] = b.from.split(":").map(Number);
+      return (ah * 60 + am) - (bh * 60 + bm);
+    });
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const [th, tm] = sorted[i].to.split(":").map(Number);
+      const [nh, nm] = sorted[i + 1].from.split(":").map(Number);
+      if ((th * 60 + tm) > (nh * 60 + nm)) {
+        alert(`Time slots overlap: ${sorted[i].from} – ${sorted[i].to} and ${sorted[i + 1].from} – ${sorted[i + 1].to}. Please fix the overlapping hours.`);
+        return;
+      }
+    }
+
     setSavingBlocks(true);
     try {
       const payload = {
         email: userEmail,
         date: selectedDate,
         blocks: blocks.map((b) => ({
-          from: istToUtc(b.from),
-          to: istToUtc(b.to),
+          from: b.from,
+          to: b.to,
         })),
       };
       const res = await fetch(`${API_BASE}/overrides`, {
@@ -277,8 +288,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
         date: selectedDate,
         action: "save",
         hours: hours.map((h) => ({
-          from: istToUtc(h.from),
-          to: istToUtc(h.to),
+          from: h.from,
+          to: h.to,
           taskDescription: h.taskDescription,
           projectId: h.projectId,
         })),
@@ -321,8 +332,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
         date: selectedDate,
         action: "submit",
         hours: hours.map((h) => ({
-          from: istToUtc(h.from),
-          to: istToUtc(h.to),
+          from: h.from,
+          to: h.to,
           taskDescription: h.taskDescription,
           projectId: h.projectId,
         })),
@@ -515,12 +526,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
                     <>
                     <tbody>
                       {filtered.map((t: any, idx: number) => {
-                        const fromRaw = t.from_time_utc instanceof Date ? t.from_time_utc.toISOString() : String(t.from_time_utc || "");
-                        const toRaw = t.to_time_utc instanceof Date ? t.to_time_utc.toISOString() : String(t.to_time_utc || "");
-                        const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
-                        const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
-                        const fromIst = fromUtc ? utcToIst(fromUtc) : "";
-                        const toIst = toUtc ? utcToIst(toUtc) : "";
+                        const fromIst = t.from_time_ist || "";
+                        const toIst = t.to_time_ist || "";
                         const dateStr = typeof t.task_date === "string" ? t.task_date.split("T")[0] : new Date(t.task_date).toISOString().split("T")[0];
                         return (
                           <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
@@ -550,13 +557,11 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
                         <td colSpan={4} className="px-4 py-3 text-[#4fc3f7] font-bold text-sm">
                           {(() => {
                             const totalMinutes = filtered.reduce((sum: number, t: any) => {
-                              const fromRaw = t.from_time_utc instanceof Date ? t.from_time_utc.toISOString() : String(t.from_time_utc || "");
-                              const toRaw = t.to_time_utc instanceof Date ? t.to_time_utc.toISOString() : String(t.to_time_utc || "");
-                              const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
-                              const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
-                              if (!fromUtc || !toUtc) return sum;
-                              const [fh, fm] = fromUtc.split(":").map(Number);
-                              const [th, tm] = toUtc.split(":").map(Number);
+                              const fromIst = t.from_time_ist || "";
+                              const toIst = t.to_time_ist || "";
+                              if (!fromIst || !toIst) return sum;
+                              const [fh, fm] = fromIst.split(":").map(Number);
+                              const [th, tm] = toIst.split(":").map(Number);
                               let diff = (th * 60 + tm) - (fh * 60 + fm);
                               if (diff < 0) diff += 1440; // handle overnight
                               return sum + diff;
@@ -598,11 +603,6 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
               Draft Saved
             </span>
           )}
-          {!isDateEditable(selectedDate) && (
-            <span className="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg text-sm font-medium border border-red-500/30">
-              🔒 Read-Only
-            </span>
-          )}
           {isEditable && !editingBlocks && (
             <button
               onClick={startEditBlocks}
@@ -612,11 +612,19 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
             </button>
           )}
           <div className="ml-auto text-lg font-semibold text-[#4fc3f7]">
-            Total: {hours.reduce((sum, h) => {
-              const [fh, fm] = h.from.split(":").map(Number);
-              const [th, tm] = h.to.split(":").map(Number);
-              return sum + (th * 60 + tm - (fh * 60 + fm)) / 60;
-            }, 0)} hrs
+            Total: {(() => {
+              const totalMinutes = hours.reduce((sum, h) => {
+                if (!h.from || !h.to) return sum;
+                const [fh, fm] = h.from.split(":").map(Number);
+                const [th, tm] = h.to.split(":").map(Number);
+                let diff = (th * 60 + tm) - (fh * 60 + fm);
+                if (diff < 0) diff += 1440;
+                return sum + diff;
+              }, 0);
+              const hrs = Math.floor(totalMinutes / 60);
+              const mins = totalMinutes % 60;
+              return mins > 0 ? `${hrs} hrs ${mins} mins` : `${hrs} hrs`;
+            })()}
           </div>
         </div>
 

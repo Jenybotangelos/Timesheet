@@ -9,6 +9,7 @@ import scheduleRouter from "./routes/schedule";
 import authRouter from "./routes/auth";
 import projectsRouter from "./routes/projects";
 import cronRouter from "./routes/cron";
+import projectTasksRouter from "./routes/projectTasks";
 
 // Load env variables
 dotenv.config();
@@ -28,6 +29,7 @@ app.use("/api/schedule", scheduleRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/cron", cronRouter);
+app.use("/api/project-tasks", projectTasksRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {
