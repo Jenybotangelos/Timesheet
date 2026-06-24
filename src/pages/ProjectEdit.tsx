@@ -482,27 +482,38 @@ export default function ProjectEdit() {
                             </div>
                           </div>
 
-                          {/* Assigned To - Multi Select */}
-                          <div className="mt-3">
+                          {/* Assigned To - Dropdown Multi Select */}
+                          <div className="mt-3 relative">
                             <label className="block text-xs text-white/50 mb-1">Assign To</label>
-                            <div className="flex flex-wrap gap-2">
-                              {employees.map((emp) => {
-                                const isSelected = task.buckets[bucket].assignedTo.includes(emp.email);
+                            {/* Selected chips */}
+                            <div className="flex flex-wrap gap-1 mb-1">
+                              {task.buckets[bucket].assignedTo.map((email) => {
+                                const emp = employees.find((e) => e.email === email);
                                 return (
-                                  <button
-                                    key={emp.email}
-                                    onClick={() => toggleAssignee(task.id, bucket, emp.email)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                                      isSelected
-                                        ? "bg-[#4fc3f7]/20 text-[#4fc3f7] border-[#4fc3f7]/50"
-                                        : "bg-white/5 text-white/50 border-white/20 hover:bg-white/10"
-                                    }`}
-                                  >
-                                    {isSelected && "✓ "}{emp.name}
-                                  </button>
+                                  <span key={email} className="px-2 py-0.5 rounded-full text-xs bg-[#4fc3f7]/20 text-[#4fc3f7] border border-[#4fc3f7]/50 flex items-center gap-1">
+                                    {emp?.name || email}
+                                    <button onClick={() => toggleAssignee(task.id, bucket, email)} className="text-[#4fc3f7] hover:text-red-400 text-xs leading-none">&times;</button>
+                                  </span>
                                 );
                               })}
                             </div>
+                            {/* Dropdown select */}
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) toggleAssignee(task.id, bucket, e.target.value);
+                              }}
+                              className="w-full border border-white/20 rounded-lg px-3 py-2 text-xs bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7] appearance-none cursor-pointer"
+                            >
+                              <option value="" className="bg-[#1a1a2e] text-white/50">Select employee...</option>
+                              {employees
+                                .filter((emp) => !task.buckets[bucket].assignedTo.includes(emp.email))
+                                .map((emp) => (
+                                  <option key={emp.email} value={emp.email} className="bg-[#1a1a2e] text-white">
+                                    {emp.name}
+                                  </option>
+                                ))}
+                            </select>
                           </div>
 
                           {/* Acceptance Criteria */}
