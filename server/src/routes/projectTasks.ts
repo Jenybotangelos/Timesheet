@@ -14,7 +14,7 @@ router.get("/:projectId", async (req, res) => {
     // Get tasks
     const tasksResult = await pool.request()
       .input("projectId", parseInt(projectId))
-      .query("SELECT id, task_name, created_at FROM timesheet_project_tasks WHERE project_id = @projectId ORDER BY created_at");
+      .query("SELECT id, task_name, description, created_at FROM timesheet_project_tasks WHERE project_id = @projectId ORDER BY created_at");
 
     const tasks = [];
     for (const task of tasksResult.recordset) {
@@ -53,6 +53,7 @@ router.get("/:projectId", async (req, res) => {
       tasks.push({
         id: task.id.toString(),
         name: task.task_name,
+        description: task.description || "",
         buckets,
         expanded: false,
       });
@@ -100,13 +101,15 @@ router.post("/:projectId", async (req, res) => {
           await transaction.request()
             .input("id", taskId)
             .input("name", task.name)
-            .query("UPDATE timesheet_project_tasks SET task_name = @name WHERE id = @id");
+            .input("description", task.description || "")
+            .query("UPDATE timesheet_project_tasks SET task_name = @name, description = @description WHERE id = @id");
         } else {
           // Insert new task
           const insertResult = await transaction.request()
             .input("projectId", parseInt(projectId))
             .input("name", task.name)
-            .query("INSERT INTO timesheet_project_tasks (project_id, task_name) OUTPUT INSERTED.id VALUES (@projectId, @name)");
+            .input("description", task.description || "")
+            .query("INSERT INTO timesheet_project_tasks (project_id, task_name, description) OUTPUT INSERTED.id VALUES (@projectId, @name, @description)");
           taskId = insertResult.recordset[0].id;
           incomingIds.add(taskId.toString());
         }

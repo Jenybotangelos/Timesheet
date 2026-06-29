@@ -27,6 +27,7 @@ interface BucketData {
 interface Task {
   id: string;
   name: string;
+  description: string;
   buckets: Record<string, BucketData>;
   expanded: boolean;
 }
@@ -67,7 +68,7 @@ const BUCKET_COLORS = [
   "from-white/10 to-white/5 border-white/20",
 ];
 
-export default function ProjectEdit() {
+export default function ProjectEdit({ userEmail }: { userEmail: string }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const projectName = searchParams.get("name") || "Project";
@@ -79,6 +80,8 @@ export default function ProjectEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [editName, setEditName] = useState(projectName);
+  const [editDescription, setEditDescription] = useState("");
 
   function handleNavigateBack() {
     if (dirty) {
@@ -92,6 +95,19 @@ export default function ProjectEdit() {
       .then((res) => res.json())
       .then((data) => setEmployees(data))
       .catch((err) => console.error("Failed to fetch employees:", err));
+    // Fetch project details for name/description
+    if (projectId) {
+      fetch("/api/projects")
+        .then((res) => res.json())
+        .then((data) => {
+          const proj = data.find((p: any) => p.id === parseInt(projectId));
+          if (proj) {
+            setEditName(proj.name);
+            setEditDescription(proj.description || "");
+          }
+        })
+        .catch((err) => console.error("Failed to fetch project details:", err));
+    }
   }, []);
 
   // Load existing tasks for this project
@@ -123,6 +139,7 @@ export default function ProjectEdit() {
     const task: Task = {
       id: Date.now().toString(),
       name: newTaskName.trim(),
+      description: "",
       buckets: createEmptyBuckets(),
       expanded: true,
     };
@@ -244,7 +261,7 @@ export default function ProjectEdit() {
           >
             ← Back
           </button>
-          <h1 className="text-xl font-semibold text-white">Edit Project: {projectName}</h1>
+          <h1 className="text-xl font-semibold text-white">Edit Project: {editName}</h1>
           <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium border border-purple-500/30">
             Admin
           </span>
@@ -258,6 +275,33 @@ export default function ProjectEdit() {
           </div>
         ) : (
         <>
+        {/* Project Details */}
+        <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 shadow-lg">
+          <h2 className="text-white font-semibold mb-3">Project Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Project Name</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => { setEditName(e.target.value); setDirty(true); }}
+                placeholder="Project name..."
+                className="w-full border border-white/30 rounded-lg px-4 py-2.5 text-sm bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Project Description</label>
+              <input
+                type="text"
+                value={editDescription}
+                onChange={(e) => { setEditDescription(e.target.value); setDirty(true); }}
+                placeholder="Project description..."
+                className="w-full border border-white/30 rounded-lg px-4 py-2.5 text-sm bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Add Task Section */}
         <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 shadow-lg">
           <h2 className="text-white font-semibold mb-3">Add Task</h2>
@@ -317,6 +361,21 @@ export default function ProjectEdit() {
                 {/* Bucket Pipeline */}
                 {task.expanded && (
                   <div className="px-5 pb-5">
+                    {/* Task Description */}
+                    <div className="mb-4">
+                      <label className="block text-xs text-white/50 mb-1">Task Description</label>
+                      <textarea
+                        value={task.description}
+                        onChange={(e) => {
+                          setDirty(true);
+                          setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, description: e.target.value } : t));
+                        }}
+                        placeholder="Describe this task..."
+                        rows={2}
+                        className="w-full border border-white/20 rounded-lg px-4 py-2 text-sm bg-white/10 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#4fc3f7] resize-none"
+                      />
+                    </div>
+
                     {/* Pipeline Visual */}
                     <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
                       {BUCKETS.map((bucket, i) => {
@@ -558,7 +617,7 @@ export default function ProjectEdit() {
         )}
 
         {/* Save Button */}
-        {tasks.length > 0 && (
+        {(tasks.length > 0 || dirty) && (
           <div className="mt-6 flex justify-end gap-3">
             <button
               onClick={handleNavigateBack}
@@ -570,6 +629,14 @@ export default function ProjectEdit() {
               onClick={async () => {
                 setSaving(true);
                 try {
+                  // Save project name/description
+                  await fetch(`/api/projects/${projectId}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: userEmail, name: editName, description: editDescription }),
+                  });
+
+                  // Save tasks
                   const res = await fetch(`/api/project-tasks/${projectId}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -577,14 +644,14 @@ export default function ProjectEdit() {
                   });
                   if (res.ok) {
                     setDirty(false);
-                    alert("Tasks saved successfully!");
+                    alert("Saved successfully!");
                   } else {
                     const err = await res.json();
                     alert("Error: " + err.error);
                   }
                 } catch (err) {
                   console.error("Failed to save:", err);
-                  alert("Failed to save tasks");
+                  alert("Failed to save");
                 } finally {
                   setSaving(false);
                 }

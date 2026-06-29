@@ -80,18 +80,11 @@ export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail
     fetch(`${API_BASE}/schedule?emails=${encodeURIComponent(emails)}&date=${selectedDate}`)
       .then((r) => r.json())
       .then((data) => {
-        // Convert UTC blocks to IST
+        // API returns IST times directly as { from_time_ist, to_time_ist }
         const converted: Record<string, { from: string; to: string }[]> = {};
         for (const email of Object.keys(data)) {
           converted[email] = data[email].map((b: any) => {
-            // Handle both "HH:mm" and ISO "1970-01-01T04:00:00.000Z" formats
-            const fromRaw = b.from_time_utc.includes("T")
-              ? b.from_time_utc.split("T")[1].substring(0, 5)
-              : b.from_time_utc;
-            const toRaw = b.to_time_utc.includes("T")
-              ? b.to_time_utc.split("T")[1].substring(0, 5)
-              : b.to_time_utc;
-            return { from: utcToIst(fromRaw), to: utcToIst(toRaw) };
+            return { from: b.from_time_ist, to: b.to_time_ist };
           });
         }
         setSchedule(converted);

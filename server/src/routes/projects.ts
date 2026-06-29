@@ -3,12 +3,19 @@ import { getPool } from "../db";
 
 const router = Router();
 
-// GET /api/projects — Get all projects
+// GET /api/projects — Get all projects with hour totals
 router.get("/", async (_req, res) => {
   try {
     const pool = await getPool();
     const result = await pool.request().query(
-      "SELECT id, name, description, created_by, created_at, is_active FROM timesheet_projects ORDER BY created_at DESC"
+      `SELECT p.id, p.name, p.description, p.created_by, p.created_at, p.is_active,
+              ISNULL(SUM(tb.expected_hours), 0) AS total_expected_hr,
+              ISNULL(SUM(tb.consumption_hr), 0) AS total_consumption_hr
+       FROM timesheet_projects p
+       LEFT JOIN timesheet_project_tasks pt ON pt.project_id = p.id
+       LEFT JOIN timesheet_task_buckets tb ON tb.task_id = pt.id
+       GROUP BY p.id, p.name, p.description, p.created_by, p.created_at, p.is_active
+       ORDER BY p.created_at DESC`
     );
     res.json(result.recordset);
   } catch (err) {

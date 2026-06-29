@@ -10,6 +10,8 @@ interface Project {
   created_by: string;
   created_at: string;
   is_active: boolean;
+  total_expected_hr: number;
+  total_consumption_hr: number;
 }
 
 export default function Projects({ userEmail }: { userEmail: string }) {
@@ -162,8 +164,14 @@ export default function Projects({ userEmail }: { userEmail: string }) {
       </div>
 
       <div className="max-w-4xl mx-auto p-6">
-        {/* Add Project Button */}
-        <div className="flex justify-end mb-6">
+        {/* Add Project + Report Buttons */}
+        <div className="flex justify-end gap-3 mb-6">
+          <button
+            onClick={() => navigate("/projects/report")}
+            className="px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all"
+          >
+            Project Report
+          </button>
           <button
             onClick={openNewForm}
             className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm font-medium transition-all shadow-md"
@@ -286,6 +294,14 @@ export default function Projects({ userEmail }: { userEmail: string }) {
                       Delete
                     </button>
                   </div>
+                </div>
+                {/* Hours at bottom-right */}
+                <div className="flex justify-end mt-2">
+                  <span className="text-white/70 text-xs font-medium">
+                    {Math.floor(project.total_expected_hr)}{project.total_expected_hr % 1 > 0 ? ` hr ${Math.round((project.total_expected_hr % 1) * 60)} min` : " hr"}
+                    {" "}<span className="text-white/40">-</span>{" "}
+                    <span className="text-[#4fc3f7]">{Math.floor(project.total_consumption_hr)}{project.total_consumption_hr % 1 > 0 ? ` hr ${Math.round((project.total_consumption_hr % 1) * 60)} min` : " hr"}</span>
+                  </span>
                 </div>
               </div>
             ))}

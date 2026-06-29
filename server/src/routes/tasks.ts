@@ -108,7 +108,7 @@ router.get("/", async (req, res) => {
       .input("date", date as string)
       .input("prevDate", pDate)
       .query(
-        `SELECT o.id, o.from_time_utc, o.to_time_utc, t.task_description, t.project_id
+        `SELECT o.id, o.from_time_utc, o.to_time_utc, t.task_description, t.project_id, t.project_task_id, t.bucket_id
          FROM timesheet_date_overrides o
          LEFT JOIN timesheet_task_entries t ON t.override_id = o.id
          WHERE o.employee_email = @email AND (
@@ -134,6 +134,8 @@ router.get("/", async (req, res) => {
           to_time_ist: utcToIst(toUtc),
           task_description: r.task_description || "",
           project_id: r.project_id || null,
+          project_task_id: r.project_task_id || null,
+          bucket_id: r.bucket_id || null,
         };
       });
       return res.json({ source: "override", submitted, status, hours });
@@ -272,7 +274,9 @@ router.post("/", async (req, res) => {
             .input("taskDescription", hour.taskDescription || "")
             .input("status", status)
             .input("projectId", hour.projectId || null)
-            .query("UPDATE timesheet_task_entries SET task_description = @taskDescription, status = @status, project_id = @projectId WHERE id = @taskId");
+            .input("projectTaskId", hour.projectTaskId || null)
+            .input("bucketId", hour.bucketId || null)
+            .query("UPDATE timesheet_task_entries SET task_description = @taskDescription, status = @status, project_id = @projectId, project_task_id = @projectTaskId, bucket_id = @bucketId WHERE id = @taskId");
           savedCount++;
           continue;
         }
@@ -308,8 +312,32 @@ router.post("/", async (req, res) => {
           .input("overrideId", overrideId)
           .input("status", status)
           .input("projectId", hour.projectId || null)
-          .query("INSERT INTO timesheet_task_entries (employee_email, task_date, task_description, submitted_at_utc, override_id, status, project_id) VALUES (@email, @utcDate, @taskDescription, GETUTCDATE(), @overrideId, @status, @projectId)");
+          .input("projectTaskId", hour.projectTaskId || null)
+          .input("bucketId", hour.bucketId || null)
+          .query("INSERT INTO timesheet_task_entries (employee_email, task_date, task_description, submitted_at_utc, override_id, status, project_id, project_task_id, bucket_id) VALUES (@email, @utcDate, @taskDescription, GETUTCDATE(), @overrideId, @status, @projectId, @projectTaskId, @bucketId)");
         savedCount++;
+      }
+
+      // Collect unique bucket IDs that were touched
+      const touchedBuckets = new Set<number>();
+      for (const hour of hours) {
+        if (hour.bucketId) touchedBuckets.add(hour.bucketId);
+      }
+
+      // Update consumption_hr for each touched bucket
+      for (const bucketId of touchedBuckets) {
+        await transaction.request()
+          .input("bucketId", bucketId)
+          .query(
+            `UPDATE timesheet_task_buckets
+             SET consumption_hr = ISNULL((
+               SELECT SUM(DATEDIFF(MINUTE, o.from_time_utc, o.to_time_utc)) / 60.0
+               FROM timesheet_task_entries te
+               JOIN timesheet_date_overrides o ON o.id = te.override_id
+               WHERE te.bucket_id = @bucketId
+             ), 0)
+             WHERE id = @bucketId`
+          );
       }
 
       await transaction.commit();
@@ -408,6 +436,137 @@ router.get("/weekly", async (req, res) => {
   } catch (err) {
     console.error("Error fetching weekly report:", err);
     res.status(500).json({ error: "Failed to fetch weekly report" });
+  }
+});
+
+// GET /api/tasks/project-report?email=admin@...
+// Returns all task entries grouped by project with total hours (no date limit)
+router.get("/project-report", async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).json({ error: "email is required" });
+    }
+
+    const pool = await getPool();
+
+    // Check if requesting user is admin
+    const adminCheck = await pool.request()
+      .input("email", email as string)
+      .query("SELECT role FROM timesheet_employees WHERE email = @email");
+
+    if (adminCheck.recordset.length === 0 || adminCheck.recordset[0].role !== "admin") {
+      return res.status(403).json({ error: "Only admins can view project reports" });
+    }
+
+    const result = await pool.request()
+      .query(
+        `SELECT 
+           t.employee_email, e.name AS employee_name,
+           t.task_date, t.task_description, t.status, t.project_id,
+           p.name AS project_name,
+           o.from_time_utc, o.to_time_utc, o.override_date
+         FROM timesheet_task_entries t
+         JOIN timesheet_employees e ON e.email = t.employee_email
+         LEFT JOIN timesheet_projects p ON p.id = t.project_id
+         LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
+         WHERE t.project_id IS NOT NULL
+         ORDER BY p.name, e.name, t.task_date, o.from_time_utc`
+      );
+
+    const rows = result.recordset.map((r: any) => {
+      const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc || "");
+      const toRaw = r.to_time_utc instanceof Date ? r.to_time_utc.toISOString() : String(r.to_time_utc || "");
+      const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
+      const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
+
+      const overrideDateRaw = r.override_date instanceof Date
+        ? r.override_date.toISOString().split("T")[0]
+        : String(r.override_date || "").split("T")[0];
+
+      let istDate = overrideDateRaw;
+      let fromIst: string | null = null;
+      let toIst: string | null = null;
+      if (fromUtc && overrideDateRaw) {
+        const fromResult = utcDateTimeToIst(overrideDateRaw, fromUtc);
+        istDate = fromResult.date;
+        fromIst = fromResult.time;
+      }
+      if (toUtc && overrideDateRaw) {
+        toIst = utcDateTimeToIst(overrideDateRaw, toUtc).time;
+      }
+
+      return {
+        employee_email: r.employee_email,
+        employee_name: r.employee_name,
+        task_date: istDate,
+        task_description: r.task_description,
+        status: r.status,
+        project_id: r.project_id,
+        project_name: r.project_name,
+        from_time_ist: fromIst,
+        to_time_ist: toIst,
+      };
+    });
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching project report:", err);
+    res.status(500).json({ error: "Failed to fetch project report" });
+  }
+});
+
+// GET /api/tasks/my-assignments?email=xxx
+// Returns projects/tasks/buckets assigned to this employee
+router.get("/my-assignments", async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).json({ error: "email is required" });
+    }
+
+    const pool = await getPool();
+
+    const result = await pool.request()
+      .input("email", email as string)
+      .query(
+        `SELECT 
+           p.id AS project_id, p.name AS project_name,
+           pt.id AS task_id, pt.task_name,
+           tb.id AS bucket_id, tb.bucket_name
+         FROM timesheet_bucket_assignees ba
+         JOIN timesheet_task_buckets tb ON tb.id = ba.bucket_id
+         JOIN timesheet_project_tasks pt ON pt.id = tb.task_id
+         JOIN timesheet_projects p ON p.id = pt.project_id
+         WHERE ba.employee_email = @email AND p.is_active = 1
+         ORDER BY p.name, pt.task_name, tb.id`
+      );
+
+    // Group by project -> task -> buckets
+    const projectMap = new Map<number, { id: number; name: string; tasks: Map<number, { id: number; name: string; buckets: { id: number; name: string }[] }> }>();
+
+    for (const row of result.recordset) {
+      if (!projectMap.has(row.project_id)) {
+        projectMap.set(row.project_id, { id: row.project_id, name: row.project_name, tasks: new Map() });
+      }
+      const project = projectMap.get(row.project_id)!;
+      if (!project.tasks.has(row.task_id)) {
+        project.tasks.set(row.task_id, { id: row.task_id, name: row.task_name, buckets: [] });
+      }
+      const task = project.tasks.get(row.task_id)!;
+      task.buckets.push({ id: row.bucket_id, name: row.bucket_name });
+    }
+
+    const response = Array.from(projectMap.values()).map((p) => ({
+      id: p.id,
+      name: p.name,
+      tasks: Array.from(p.tasks.values()),
+    }));
+
+    res.json(response);
+  } catch (err) {
+    console.error("Error fetching assignments:", err);
+    res.status(500).json({ error: "Failed to fetch assignments" });
   }
 });
 

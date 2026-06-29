@@ -20,6 +20,8 @@ interface HourRow {
   to: string;   // IST HH:mm
   taskDescription: string;
   projectId: number | null;
+  projectTaskId: number | null;
+  bucketId: number | null;
   saved: boolean; // true if task was already saved to DB
 }
 
@@ -27,6 +29,23 @@ interface Project {
   id: number;
   name: string;
   description: string;
+}
+
+interface AssignmentBucket {
+  id: number;
+  name: string;
+}
+
+interface AssignmentTask {
+  id: number;
+  name: string;
+  buckets: AssignmentBucket[];
+}
+
+interface AssignmentProject {
+  id: number;
+  name: string;
+  tasks: AssignmentTask[];
 }
 
 export default function TaskSubmission({ userEmail, userRole }: { userEmail: string; userRole: string }) {
@@ -44,6 +63,7 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   const [blocks, setBlocks] = useState<{ from: string; to: string; locked?: boolean }[]>([]);
   const [savingBlocks, setSavingBlocks] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentProject[]>([]);
 
   // Weekly report state (admin only)
   const [reportStartDate, setReportStartDate] = useState(() => {
@@ -100,6 +120,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
           to: h.to_time_ist,
           taskDescription: h.task_description || "",
           projectId: h.project_id || null,
+          projectTaskId: h.project_task_id || null,
+          bucketId: h.bucket_id || null,
           saved: !!h.task_description,
         }))
       );
@@ -111,12 +133,16 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
     }
   }
 
-  // Fetch active projects
+  // Fetch active projects and assignments
   useEffect(() => {
     fetch(`${API_BASE}/projects`)
       .then((r) => r.json())
       .then((data) => setProjects(data.filter((p: any) => p.is_active)))
       .catch((err) => console.error("Failed to fetch projects:", err));
+    fetch(`${API_BASE}/tasks/my-assignments?email=${userEmail}`)
+      .then((r) => r.json())
+      .then((data) => setAssignments(data))
+      .catch((err) => console.error("Failed to fetch assignments:", err));
     // Fetch employees for admin weekly report
     fetch(`${API_BASE}/employees`)
       .then((r) => r.json())
@@ -276,7 +302,15 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   }
 
   function updateProject(index: number, projectId: number | null) {
-    setHours(hours.map((h, i) => (i === index ? { ...h, projectId } : h)));
+    setHours(hours.map((h, i) => (i === index ? { ...h, projectId, projectTaskId: null, bucketId: null } : h)));
+  }
+
+  function updateProjectTask(index: number, projectTaskId: number | null) {
+    setHours(hours.map((h, i) => (i === index ? { ...h, projectTaskId, bucketId: null } : h)));
+  }
+
+  function updateBucket(index: number, bucketId: number | null) {
+    setHours(hours.map((h, i) => (i === index ? { ...h, bucketId } : h)));
   }
 
   async function handleSave() {
@@ -292,6 +326,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
           to: h.to,
           taskDescription: h.taskDescription,
           projectId: h.projectId,
+          projectTaskId: h.projectTaskId,
+          bucketId: h.bucketId,
         })),
       };
 
@@ -336,6 +372,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
           to: h.to,
           taskDescription: h.taskDescription,
           projectId: h.projectId,
+          projectTaskId: h.projectTaskId,
+          bucketId: h.bucketId,
         })),
       };
 
@@ -696,13 +734,26 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
               <thead>
                 <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
                   <th className="px-4 py-3 text-left font-semibold text-white w-[50px]">#</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[160px]">Time Slot</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[180px]">Project</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white w-[130px]">Time Slot</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">Project</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">Task</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white w-[140px]">Stage</th>
                   <th className="px-4 py-3 text-left font-semibold text-white">Task Description</th>
                 </tr>
               </thead>
               <tbody>
-                {hours.map((hour, idx) => (
+                {hours.map((hour, idx) => {
+                  // Get assigned tasks for the selected project
+                  const assignedProject = assignments.find((a) => a.id === hour.projectId);
+                  const assignedTasks = assignedProject?.tasks || [];
+                  // Get assigned buckets for the selected task
+                  const assignedTask = assignedTasks.find((t) => t.id === hour.projectTaskId);
+                  const assignedBuckets = assignedTask?.buckets || [];
+                  // Check if selected project is "Unassigned"
+                  const unassignedProject = projects.find((p) => p.name.toLowerCase() === "unassigned");
+                  const isUnassigned = hour.projectId === unassignedProject?.id;
+
+                  return (
                   <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
                     <td className="px-4 py-3 font-medium text-white/60 border-t border-white/10">{idx + 1}</td>
                     <td className="px-4 py-3 text-[#4fc3f7] font-medium border-t border-white/10">
@@ -710,22 +761,59 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
                     </td>
                     <td className="px-4 py-3 border-t border-white/10">
                       {!isEditable || hour.saved ? (
-                        <span
-                          className="text-white/70 text-xs cursor-default"
-                          title={projects.find((p) => p.id === hour.projectId)?.description || ""}
-                        >
-                          {projects.find((p) => p.id === hour.projectId)?.name || "—"}
+                        <span className="text-white/70 text-xs">
+                          {assignments.find((a) => a.id === hour.projectId)?.name || projects.find((p) => p.id === hour.projectId)?.name || "—"}
                         </span>
                       ) : (
                         <select
                           value={hour.projectId || ""}
                           onChange={(e) => updateProject(idx, e.target.value ? Number(e.target.value) : null)}
-                          title={projects.find((p) => p.id === hour.projectId)?.description || ""}
-                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
                         >
-                          <option value="" className="bg-[#1e293b]">Select project</option>
-                          {projects.map((p) => (
-                            <option key={p.id} value={p.id} title={p.description} className="bg-[#1e293b]">{p.name}</option>
+                          <option value="" className="bg-[#1e293b]">Select</option>
+                          {unassignedProject && (
+                            <option key={unassignedProject.id} value={unassignedProject.id} className="bg-[#1e293b]">Unassigned</option>
+                          )}
+                          {assignments.filter((a) => a.id !== unassignedProject?.id).map((a) => (
+                            <option key={a.id} value={a.id} className="bg-[#1e293b]">{a.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 border-t border-white/10">
+                      {!isEditable || hour.saved ? (
+                        <span className="text-white/70 text-xs">
+                          {assignedTasks.find((t) => t.id === hour.projectTaskId)?.name || "—"}
+                        </span>
+                      ) : (
+                        <select
+                          value={hour.projectTaskId || ""}
+                          onChange={(e) => updateProjectTask(idx, e.target.value ? Number(e.target.value) : null)}
+                          disabled={!hour.projectId || isUnassigned}
+                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
+                        >
+                          <option value="" className="bg-[#1e293b]">Select</option>
+                          {assignedTasks.map((t) => (
+                            <option key={t.id} value={t.id} className="bg-[#1e293b]">{t.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 border-t border-white/10">
+                      {!isEditable || hour.saved ? (
+                        <span className="text-white/70 text-xs">
+                          {assignedBuckets.find((b) => b.id === hour.bucketId)?.name || "—"}
+                        </span>
+                      ) : (
+                        <select
+                          value={hour.bucketId || ""}
+                          onChange={(e) => updateBucket(idx, e.target.value ? Number(e.target.value) : null)}
+                          disabled={!hour.projectTaskId || isUnassigned}
+                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
+                        >
+                          <option value="" className="bg-[#1e293b]">Select</option>
+                          {assignedBuckets.map((b) => (
+                            <option key={b.id} value={b.id} className="bg-[#1e293b]">{b.name}</option>
                           ))}
                         </select>
                       )}
@@ -747,7 +835,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
