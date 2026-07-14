@@ -88,30 +88,36 @@ router.get("/:projectId", async (req, res) => {
     const { projectId } = req.params;
     const pool = await getPool();
 
-    const tasksResult = await pool.request()
+    // Single query: tasks + their bucket names
+    const result = await pool.request()
       .input("projectId", parseInt(projectId))
-      .query("SELECT id, task_name, description, created_at FROM timesheet_project_tasks WHERE project_id = @projectId ORDER BY created_at");
+      .query(`
+        SELECT t.id, t.task_name, t.description, t.created_at, b.bucket_name
+        FROM timesheet_project_tasks t
+        LEFT JOIN timesheet_task_buckets b ON b.task_id = t.id
+        WHERE t.project_id = @projectId
+        ORDER BY t.created_at, b.id
+      `);
 
-    // Get selected stages for each task (just bucket names, no details)
-    const tasks = [];
-    for (const task of tasksResult.recordset) {
-      const bucketsResult = await pool.request()
-        .input("taskId", task.id)
-        .query("SELECT bucket_name, status FROM timesheet_task_buckets WHERE task_id = @taskId ORDER BY id");
-
-      const selectedStages = bucketsResult.recordset.map((b: any) => b.bucket_name);
-
-      tasks.push({
-        id: task.id.toString(),
-        name: task.task_name,
-        description: task.description || "",
-        selectedStages,
-        buckets: {},
-        expanded: false,
-      });
+    // Group by task
+    const taskMap = new Map<number, any>();
+    for (const row of result.recordset) {
+      if (!taskMap.has(row.id)) {
+        taskMap.set(row.id, {
+          id: row.id.toString(),
+          name: row.task_name,
+          description: row.description || "",
+          selectedStages: [],
+          buckets: {},
+          expanded: false,
+        });
+      }
+      if (row.bucket_name) {
+        taskMap.get(row.id).selectedStages.push(row.bucket_name);
+      }
     }
 
-    res.json(tasks);
+    res.json(Array.from(taskMap.values()));
   } catch (err: any) {
     console.error("Error fetching project tasks:", err);
     res.status(500).json({ error: "Failed to fetch project tasks" });

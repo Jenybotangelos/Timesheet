@@ -12,6 +12,11 @@ const dbConfig: sql.config = {
   user: process.env.DB_USER || "",
   password: process.env.DB_PASSWORD || "",
   port: parseInt(process.env.DB_PORT || "1433"),
+  pool: {
+    min: 2,
+    max: 10,
+    idleTimeoutMillis: 30000,
+  },
   options: {
     encrypt: true,
     trustServerCertificate: false,

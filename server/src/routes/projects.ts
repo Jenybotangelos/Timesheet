@@ -24,6 +24,23 @@ router.get("/", async (_req, res) => {
   }
 });
 
+// GET /api/projects/:id — Get a single project by ID
+router.get("/:id", async (req, res) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id", parseInt(req.params.id))
+      .query("SELECT id, name, description FROM timesheet_projects WHERE id = @id");
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    res.json(result.recordset[0]);
+  } catch (err) {
+    console.error("Error fetching project:", err);
+    res.status(500).json({ error: "Failed to fetch project" });
+  }
+});
+
 // POST /api/projects — Create a new project (admin only)
 router.post("/", async (req, res) => {
   try {

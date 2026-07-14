@@ -92,15 +92,14 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
       .then((res) => res.json())
       .then((data) => setEmployees(data))
       .catch((err) => console.error("Failed to fetch employees:", err));
-    // Fetch project details for name/description
+    // Fetch project details by ID
     if (projectId) {
-      fetch("/api/projects")
+      fetch(`/api/projects/${projectId}`)
         .then((res) => res.json())
         .then((data) => {
-          const proj = data.find((p: any) => p.id === parseInt(projectId));
-          if (proj) {
-            setEditName(proj.name);
-            setEditDescription(proj.description || "");
+          if (data.name) {
+            setEditName(data.name);
+            setEditDescription(data.description || "");
           }
         })
         .catch((err) => console.error("Failed to fetch project details:", err));
