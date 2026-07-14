@@ -53,12 +53,7 @@ export default function ProjectView() {
           const filled = data.map((t: any) => ({
             ...t,
             expanded: false,
-            buckets: Object.fromEntries(
-              BUCKETS.map((b) => [b, t.buckets[b] || {
-                startDate: "", endDate: "", assignedTo: [], priority: "medium",
-                expectedHours: 0, consumptionHr: 0, acceptanceCriteria: [], completed: false, inProgress: false,
-              }])
-            ),
+            buckets: t.buckets,
           }));
           setTasks(filled);
         }
@@ -118,18 +113,22 @@ export default function ProjectView() {
                   {/* Progress summary */}
                   <div className="flex items-center gap-2">
                     {(() => {
-                      const activeBucket = BUCKETS.find((b) => task.buckets[b]?.inProgress);
-                      const allDone = BUCKETS.every((b) => task.buckets[b]?.completed);
+                      const taskStages = BUCKETS.filter((b) => task.buckets[b]);
+                      const activeBucket = taskStages.find((b) => task.buckets[b]?.inProgress);
+                      const allDone = taskStages.length > 0 && taskStages.every((b) => task.buckets[b]?.completed);
                       if (allDone) {
                         return <span className="text-green-400 text-xs font-medium px-2 py-1 bg-green-500/15 border border-green-500/30 rounded-full">✓ All Completed</span>;
                       }
                       if (activeBucket) {
                         return <span className="text-orange-400 text-xs font-medium px-2 py-1 bg-orange-500/15 border border-orange-500/30 rounded-full">● {activeBucket}</span>;
                       }
+                      if (taskStages.length === 0) {
+                        return <span className="text-white/40 text-xs font-medium px-2 py-1 bg-white/5 border border-white/15 rounded-full">No Stages</span>;
+                      }
                       return <span className="text-white/40 text-xs font-medium px-2 py-1 bg-white/5 border border-white/15 rounded-full">Not Started</span>;
                     })()}
                     <div className="flex items-center gap-1">
-                      {BUCKETS.map((bucket) => {
+                      {BUCKETS.filter((b) => task.buckets[b]).map((bucket) => {
                         const b = task.buckets[bucket];
                         const color = b?.completed ? "bg-green-500" : b?.inProgress ? "bg-orange-500" : "bg-white/20";
                         return <div key={bucket} className={`w-3 h-3 rounded-full ${color}`} title={`${bucket}: ${b?.completed ? "Done" : b?.inProgress ? "Active" : "Pending"}`} />;
@@ -141,7 +140,7 @@ export default function ProjectView() {
                 {/* Bucket Details */}
                 {task.expanded && (
                   <div className="px-5 pb-5 space-y-3">
-                    {BUCKETS.map((bucket) => {
+                    {BUCKETS.filter((b) => task.buckets[b]).map((bucket) => {
                       const data = task.buckets[bucket];
                       if (!data) return null;
                       const status = getStatusLabel(data);

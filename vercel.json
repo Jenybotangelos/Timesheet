@@ -2,7 +2,11 @@
   "framework": "vite",
   "crons": [
     {
-      "path": "/api/cron/check-submissions",
+      "path": "/api/cron/remind-employees",
+      "schedule": "30 3 * * 2-6"
+    },
+    {
+      "path": "/api/cron/notify-kokul",
       "schedule": "30 4 * * 2-6"
     }
   ],

@@ -217,6 +217,12 @@ export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail
           >
             Submit Task
           </button>
+          <button
+            onClick={() => navigate("/my-tasks")}
+            className="px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg hover:from-teal-400 hover:to-cyan-500 text-sm font-medium transition-all shadow-md"
+          >
+            My Tasks
+          </button>
           {userRole === "admin" && (
             <button
               onClick={() => navigate("/projects")}

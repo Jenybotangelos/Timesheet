@@ -8,6 +8,7 @@ import Projects from "./pages/Projects"
 import ProjectEdit from "./pages/ProjectEdit"
 import ProjectView from "./pages/ProjectView"
 import ProjectReport from "./pages/ProjectReport"
+import MyTasks from "./pages/MyTasks"
 import Login from "./pages/Login"
 
 const API_BASE = "/api";
@@ -115,6 +116,7 @@ function App() {
       <Route path="/" element={<Dashboard userEmail={user.email} userRole={user.role} onLogout={handleLogout} />} />
       <Route path="/edit" element={<WorkingHoursEditor userEmail={user.email} />} />
       <Route path="/submit" element={<TaskSubmission userEmail={user.email} userRole={user.role} />} />
+      <Route path="/my-tasks" element={<MyTasks userEmail={user.email} />} />
       {user.role === "admin" && (
         <>
           <Route path="/projects" element={<Projects userEmail={user.email} />} />

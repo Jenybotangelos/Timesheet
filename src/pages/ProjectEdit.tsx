@@ -29,25 +29,22 @@ interface Task {
   name: string;
   description: string;
   buckets: Record<string, BucketData>;
+  selectedStages: string[];
   expanded: boolean;
 }
 
-function createEmptyBuckets(): Record<string, BucketData> {
-  const buckets: Record<string, BucketData> = {};
-  for (const b of BUCKETS) {
-    buckets[b] = {
-      startDate: "",
-      endDate: "",
-      assignedTo: [],
-      priority: "medium",
-      expectedHours: 0,
-      consumptionHr: 0,
-      acceptanceCriteria: [""],
-      completed: false,
-      inProgress: false,
-    };
-  }
-  return buckets;
+function createEmptyBucketData(): BucketData {
+  return {
+    startDate: "",
+    endDate: "",
+    assignedTo: [],
+    priority: "medium",
+    expectedHours: 0,
+    consumptionHr: 0,
+    acceptanceCriteria: [""],
+    completed: false,
+    inProgress: false,
+  };
 }
 
 // Mock employees for multi-select (replace with API call later)
@@ -117,22 +114,27 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
-          // Fill missing buckets with defaults
-          const filled = data.map((t: any) => ({
-            ...t,
-            buckets: Object.fromEntries(
-              BUCKETS.map((b) => [b, t.buckets[b] || {
-                startDate: "", endDate: "", assignedTo: [], priority: "medium",
-                expectedHours: 0, consumptionHr: 0, acceptanceCriteria: [""], completed: false, inProgress: false,
-              }])
-            ),
-          }));
-          setTasks(filled);
+          setTasks(data);
         }
       })
       .catch((err) => console.error("Failed to fetch tasks:", err))
       .finally(() => setLoading(false));
   }, [projectId]);
+
+  // Load bucket details when a task is expanded
+  async function loadTaskDetails(taskId: string) {
+    try {
+      const res = await fetch(`/api/project-tasks/${projectId}/${taskId}/details`);
+      const buckets = await res.json();
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId ? { ...t, buckets, selectedStages: Object.keys(buckets).filter((b) => BUCKETS.includes(b as any)) } : t
+        )
+      );
+    } catch (err) {
+      console.error("Failed to load task details:", err);
+    }
+  }
 
   function addTask() {
     if (!newTaskName.trim()) return;
@@ -140,7 +142,8 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
       id: Date.now().toString(),
       name: newTaskName.trim(),
       description: "",
-      buckets: createEmptyBuckets(),
+      buckets: {},
+      selectedStages: [],
       expanded: true,
     };
     setTasks([...tasks, task]);
@@ -161,6 +164,11 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
   }
 
   function toggleTask(taskId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task && !task.expanded && Object.keys(task.buckets).length === 0 && !isNaN(Number(taskId))) {
+      // Load details from server on first expand
+      loadTaskDetails(taskId);
+    }
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, expanded: !t.expanded } : t)));
   }
 
@@ -246,6 +254,32 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
             [bucket]: { ...t.buckets[bucket], assignedTo: updated },
           },
         };
+      })
+    );
+  }
+
+  function toggleStage(taskId: string, stage: string) {
+    setDirty(true);
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const isSelected = t.selectedStages.includes(stage);
+        if (isSelected) {
+          // Remove stage
+          const { [stage]: _, ...remainingBuckets } = t.buckets;
+          return {
+            ...t,
+            selectedStages: t.selectedStages.filter((s) => s !== stage),
+            buckets: remainingBuckets,
+          };
+        } else {
+          // Add stage
+          return {
+            ...t,
+            selectedStages: [...t.selectedStages, stage],
+            buckets: { ...t.buckets, [stage]: createEmptyBucketData() },
+          };
+        }
       })
     );
   }
@@ -344,7 +378,7 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
                     <span className="text-white/50 text-sm">{task.expanded ? "▼" : "▶"}</span>
                     <h3 className="text-white font-semibold text-lg">{task.name}</h3>
                     <span className="text-white/30 text-xs">
-                      {BUCKETS.length} stages
+                      {task.selectedStages.length} stage{task.selectedStages.length !== 1 ? "s" : ""}
                     </span>
                   </div>
                   <button
@@ -376,36 +410,63 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
                       />
                     </div>
 
-                    {/* Pipeline Visual */}
-                    <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
-                      {BUCKETS.map((bucket, i) => {
-                        const b = task.buckets[bucket];
-                        return (
-                          <div key={bucket} className="flex items-center">
-                            <div className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${b.completed ? "bg-green-500/20 text-green-400 border-green-500/40" : b.inProgress ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-white/10 text-white/70 border-white/20"}`}>
-                              {b.completed ? "✓ " : b.inProgress ? "● " : ""}{bucket}
-                            </div>
-                            {i < BUCKETS.length - 1 && (
-                              <span className="text-white/30 mx-1">→</span>
-                            )}
-                          </div>
-                        );
-                      })}
+                    {/* Stage Selector */}
+                    <div className="mb-4">
+                      <label className="block text-xs text-white/50 mb-2">Select Stages</label>
+                      <div className="flex flex-wrap gap-2">
+                        {BUCKETS.map((bucket) => {
+                          const isSelected = task.selectedStages.includes(bucket);
+                          return (
+                            <button
+                              key={bucket}
+                              onClick={() => toggleStage(task.id, bucket)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                                isSelected
+                                  ? "bg-[#4fc3f7]/20 text-[#4fc3f7] border-[#4fc3f7]/50"
+                                  : "bg-white/5 text-white/40 border-white/15 hover:bg-white/10 hover:text-white/60"
+                              }`}
+                            >
+                              {isSelected ? "✓ " : ""}{bucket}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    {/* Bucket Details */}
+                    {/* Pipeline Visual (only selected stages) */}
+                    {task.selectedStages.length > 0 && (
+                      <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
+                        {BUCKETS.filter((b) => task.selectedStages.includes(b)).map((bucket, i, arr) => {
+                          const b = task.buckets[bucket];
+                          if (!b) return null;
+                          return (
+                            <div key={bucket} className="flex items-center">
+                              <div className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${b.completed ? "bg-green-500/20 text-green-400 border-green-500/40" : b.inProgress ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-white/10 text-white/70 border-white/20"}`}>
+                                {b.completed ? "✓ " : b.inProgress ? "● " : ""}{bucket}
+                              </div>
+                              {i < arr.length - 1 && (
+                                <span className="text-white/30 mx-1">→</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Bucket Details (only selected stages) */}
                     <div className="space-y-3">
-                      {BUCKETS.map((bucket, bucketIndex) => {
+                      {BUCKETS.filter((b) => task.selectedStages.includes(b)).map((bucket, bucketIndex, selectedArr) => {
                         const bucketData = task.buckets[bucket];
-                        // Determine if this is the first non-completed bucket
-                        const firstIncompleteIndex = BUCKETS.findIndex((b) => !task.buckets[b].completed);
+                        if (!bucketData) return null;
+                        // Determine if this is the first non-completed bucket among selected stages
+                        const firstIncompleteIndex = selectedArr.findIndex((b) => !task.buckets[b]?.completed);
                         const isFirstIncomplete = bucketIndex === firstIncompleteIndex;
                         // Show "Set Active" only on the first incomplete bucket that isn't already active
                         const showSetActive = isFirstIncomplete && !bucketData.inProgress;
                         // Show "Mark Complete" only on the currently active bucket
                         const showMarkComplete = bucketData.inProgress;
                         // Show "Undo" on the last completed bucket (the one just before the first incomplete)
-                        const isLastCompleted = bucketData.completed && (firstIncompleteIndex === bucketIndex + 1 || (firstIncompleteIndex === -1 && bucketIndex === BUCKETS.length - 1));
+                        const isLastCompleted = bucketData.completed && (firstIncompleteIndex === bucketIndex + 1 || (firstIncompleteIndex === -1 && bucketIndex === selectedArr.length - 1));
 
                         return (
                         <div
@@ -430,8 +491,8 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
                                         const updatedBuckets = { ...t.buckets };
                                         updatedBuckets[bucket] = { ...updatedBuckets[bucket], completed: false, inProgress: true };
                                         // Deactivate the next bucket if it exists
-                                        if (bucketIndex + 1 < BUCKETS.length) {
-                                          const nextBucket = BUCKETS[bucketIndex + 1];
+                                        if (bucketIndex + 1 < selectedArr.length) {
+                                          const nextBucket = selectedArr[bucketIndex + 1];
                                           updatedBuckets[nextBucket] = { ...updatedBuckets[nextBucket], inProgress: false };
                                         }
                                         return { ...t, buckets: updatedBuckets };
@@ -643,6 +704,19 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
                     body: JSON.stringify({ tasks }),
                   });
                   if (res.ok) {
+                    const result = await res.json();
+                    // Update task IDs with real DB IDs
+                    if (result.savedTaskIds) {
+                      setTasks((prev) =>
+                        prev.map((t) => {
+                          const mapping = result.savedTaskIds.find((m: any) => m.clientId === t.id);
+                          if (mapping) {
+                            return { ...t, id: mapping.dbId.toString() };
+                          }
+                          return t;
+                        })
+                      );
+                    }
                     setDirty(false);
                     alert("Saved successfully!");
                   } else {
