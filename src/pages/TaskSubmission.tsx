@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 const API_BASE = "/api";
 
 
-// Check if a date is editable (today and yesterday only)
+// Check if a date is editable (today and yesterday = 2 days total)
 function isDateEditable(date: string): boolean {
   const selectedDate = new Date(date);
   const today = new Date();

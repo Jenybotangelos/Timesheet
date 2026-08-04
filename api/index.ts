@@ -9,6 +9,7 @@ import authRouter from "../server/src/routes/auth";
 import projectsRouter from "../server/src/routes/projects";
 import cronRouter from "../server/src/routes/cron";
 import projectTasksRouter from "../server/src/routes/projectTasks";
+import requestsRouter from "../server/src/routes/requests";
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/cron", cronRouter);
 app.use("/api/project-tasks", projectTasksRouter);
+app.use("/api/requests", requestsRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

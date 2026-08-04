@@ -9,6 +9,9 @@ import ProjectEdit from "./pages/ProjectEdit"
 import ProjectView from "./pages/ProjectView"
 import ProjectReport from "./pages/ProjectReport"
 import MyTasks from "./pages/MyTasks"
+import MyProjects from "./pages/MyProjects"
+import MyProjectEdit from "./pages/MyProjectEdit"
+import Approvals from "./pages/Approvals"
 import Login from "./pages/Login"
 
 const API_BASE = "/api";
@@ -117,9 +120,12 @@ function App() {
       <Route path="/edit" element={<WorkingHoursEditor userEmail={user.email} />} />
       <Route path="/submit" element={<TaskSubmission userEmail={user.email} userRole={user.role} />} />
       <Route path="/my-tasks" element={<MyTasks userEmail={user.email} />} />
+      <Route path="/my-projects" element={<MyProjects userEmail={user.email} />} />
+      <Route path="/my-projects/edit" element={<MyProjectEdit userEmail={user.email} />} />
       {user.role === "admin" && (
         <>
           <Route path="/projects" element={<Projects userEmail={user.email} />} />
+          <Route path="/approvals" element={<Approvals userEmail={user.email} />} />
           <Route path="/projects/edit" element={<ProjectEdit userEmail={user.email} />} />
           <Route path="/projects/view" element={<ProjectView />} />
           <Route path="/projects/report" element={<ProjectReport userEmail={user.email} />} />

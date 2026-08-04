@@ -289,7 +289,19 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
             >
               ← Back
             </button>
-            <h1 className="text-xl font-semibold text-white">My Tasks</h1>
+            <div className="flex bg-white/10 rounded-lg border border-white/20 p-0.5">
+              <button
+                className="px-4 py-1.5 rounded-md text-sm font-medium transition-all bg-[#4fc3f7]/20 text-[#4fc3f7] border border-[#4fc3f7]/50"
+              >
+                My Tasks
+              </button>
+              <button
+                onClick={() => navigate("/my-projects")}
+                className="px-4 py-1.5 rounded-md text-sm font-medium transition-all text-white/40 hover:text-white/70 hover:bg-white/10"
+              >
+                My Projects
+              </button>
+            </div>
             <span className="text-white/30 text-sm">
               {tasks.length} task{tasks.length !== 1 ? "s" : ""} across {bucketNames.length} stage{bucketNames.length !== 1 ? "s" : ""}
             </span>

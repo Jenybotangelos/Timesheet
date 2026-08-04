@@ -164,8 +164,14 @@ export default function Projects({ userEmail }: { userEmail: string }) {
       </div>
 
       <div className="max-w-4xl mx-auto p-6">
-        {/* Add Project + Report Buttons */}
+        {/* Add Project + Report + Approvals Buttons */}
         <div className="flex justify-end gap-3 mb-6">
+          <button
+            onClick={() => navigate("/approvals")}
+            className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-700 text-white rounded-lg hover:from-yellow-400 hover:to-yellow-600 text-sm font-medium transition-all shadow-md"
+          >
+            Approvals
+          </button>
           <button
             onClick={() => navigate("/projects/report")}
             className="px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all"
