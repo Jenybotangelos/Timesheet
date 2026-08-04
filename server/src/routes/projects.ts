@@ -133,9 +133,46 @@ router.delete("/:id", async (req, res) => {
       return res.status(403).json({ error: "Only admins can delete projects" });
     }
 
-    await pool.request()
-      .input("id", parseInt(id))
-      .query("DELETE FROM timesheet_projects WHERE id = @id");
+    // Delete child records first, then the project
+    const transaction = pool.transaction();
+    await transaction.begin();
+    try {
+      // Delete bucket assignees and criteria for all tasks in this project
+      await transaction.request().input("id", parseInt(id)).query(
+        `DELETE a FROM timesheet_bucket_assignees a
+         JOIN timesheet_task_buckets b ON a.bucket_id = b.id
+         JOIN timesheet_project_tasks t ON b.task_id = t.id
+         WHERE t.project_id = @id`
+      );
+      await transaction.request().input("id", parseInt(id)).query(
+        `DELETE c FROM timesheet_bucket_criteria c
+         JOIN timesheet_task_buckets b ON c.bucket_id = b.id
+         JOIN timesheet_project_tasks t ON b.task_id = t.id
+         WHERE t.project_id = @id`
+      );
+      // Delete task entries referencing this project
+      await transaction.request().input("id", parseInt(id)).query(
+        `DELETE FROM timesheet_task_entries WHERE project_id = @id`
+      );
+      // Delete buckets
+      await transaction.request().input("id", parseInt(id)).query(
+        `DELETE b FROM timesheet_task_buckets b
+         JOIN timesheet_project_tasks t ON b.task_id = t.id
+         WHERE t.project_id = @id`
+      );
+      // Delete tasks
+      await transaction.request().input("id", parseInt(id)).query(
+        `DELETE FROM timesheet_project_tasks WHERE project_id = @id`
+      );
+      // Delete the project
+      await transaction.request().input("id", parseInt(id)).query(
+        `DELETE FROM timesheet_projects WHERE id = @id`
+      );
+      await transaction.commit();
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
 
     res.json({ success: true });
   } catch (err) {

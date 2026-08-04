@@ -95,7 +95,7 @@ router.put("/:id", async (req, res) => {
       return res.status(403).json({ error: "Only admins can edit requests" });
     }
 
-    await pool.request()
+    const result = await pool.request()
       .input("id", parseInt(id))
       .input("name", name || null)
       .input("description", description || null)
@@ -105,6 +105,10 @@ router.put("/:id", async (req, res) => {
          SET name = ISNULL(@name, name), description = ISNULL(@description, description), stages = ISNULL(@stages, stages)
          WHERE id = @id AND status = 'pending'`
       );
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: "Request not found or not pending" });
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -180,7 +184,8 @@ router.patch("/bulk", async (req, res) => {
 
             // If stages contains embedded tasks, create them
             if (r.stages) {
-              const parsed = JSON.parse(r.stages);
+              let parsed: any;
+              try { parsed = JSON.parse(r.stages); } catch { parsed = {}; }
               const taskList = parsed.tasks || [];
               for (const taskData of taskList) {
                 const tInsert = await transaction.request()
@@ -241,10 +246,11 @@ router.patch("/bulk", async (req, res) => {
             // Parse stages — can be rich object or simple array
             let stageEntries: [string, any][] = [];
             if (r.stages) {
-              const parsed = JSON.parse(r.stages);
+              let parsed: any;
+              try { parsed = JSON.parse(r.stages); } catch { parsed = null; }
               if (Array.isArray(parsed)) {
                 stageEntries = parsed.map((s: string) => [s, { expectedHours: 0, assignedTo: [r.requested_by] }]);
-              } else {
+              } else if (parsed) {
                 stageEntries = Object.entries(parsed);
               }
             } else {

@@ -402,6 +402,9 @@ router.post("/:projectId", async (req, res) => {
         for (const [existingName, existingId] of existingBucketMap) {
           if (!taskBucketNames.includes(existingName)) {
             await transaction.request()
+              .input("delEntryBucket", existingId)
+              .query("DELETE FROM timesheet_task_entries WHERE bucket_id = @delEntryBucket");
+            await transaction.request()
               .input("delBucketId1", existingId)
               .query("DELETE FROM timesheet_bucket_assignees WHERE bucket_id = @delBucketId1");
             await transaction.request()
@@ -486,6 +489,19 @@ router.post("/:projectId", async (req, res) => {
       // Delete tasks that were removed
       for (const existId of existingIds) {
         if (!incomingIds.has(existId)) {
+          // Delete entries, assignees, criteria, buckets, then the task
+          await transaction.request()
+            .input("delTaskEntries", parseInt(existId))
+            .query("DELETE FROM timesheet_task_entries WHERE project_task_id = @delTaskEntries");
+          await transaction.request()
+            .input("delTaskBucketA", parseInt(existId))
+            .query(`DELETE a FROM timesheet_bucket_assignees a JOIN timesheet_task_buckets b ON a.bucket_id = b.id WHERE b.task_id = @delTaskBucketA`);
+          await transaction.request()
+            .input("delTaskBucketC", parseInt(existId))
+            .query(`DELETE c FROM timesheet_bucket_criteria c JOIN timesheet_task_buckets b ON c.bucket_id = b.id WHERE b.task_id = @delTaskBucketC`);
+          await transaction.request()
+            .input("delTaskBuckets", parseInt(existId))
+            .query("DELETE FROM timesheet_task_buckets WHERE task_id = @delTaskBuckets");
           await transaction.request()
             .input("id", parseInt(existId))
             .query("DELETE FROM timesheet_project_tasks WHERE id = @id");
