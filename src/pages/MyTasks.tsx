@@ -299,7 +299,7 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
                 onClick={() => navigate("/my-projects")}
                 className="px-4 py-1.5 rounded-md text-sm font-medium transition-all text-white/40 hover:text-white/70 hover:bg-white/10"
               >
-                My Projects
+                Add Project
               </button>
             </div>
             <span className="text-white/30 text-sm">

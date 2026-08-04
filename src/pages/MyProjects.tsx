@@ -160,7 +160,7 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
             <button
               className="px-4 py-1.5 rounded-md text-sm font-medium transition-all bg-[#4fc3f7]/20 text-[#4fc3f7] border border-[#4fc3f7]/50"
             >
-              My Projects
+              Add Project
             </button>
           </div>
         </div>
