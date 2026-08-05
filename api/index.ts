@@ -37,8 +37,15 @@ app.use("/api/requests", requestsRouter);
 app.use("/api/task-activity", taskActivityRouter);
 
 // Health check
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", env: !!process.env.DB_SERVER });
+app.get("/api/health", async (_req, res) => {
+  try {
+    const { getPool } = await import("../server/src/db");
+    const pool = await getPool();
+    await pool.request().query("SELECT 1");
+    res.json({ status: "ok", db: true, env: !!process.env.DB_SERVER });
+  } catch (err: any) {
+    res.json({ status: "error", db: false, env: !!process.env.DB_SERVER, error: err.message });
+  }
 });
 
 export default app;
