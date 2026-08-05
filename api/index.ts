@@ -10,6 +10,7 @@ import projectsRouter from "../server/src/routes/projects";
 import cronRouter from "../server/src/routes/cron";
 import projectTasksRouter from "../server/src/routes/projectTasks";
 import requestsRouter from "../server/src/routes/requests";
+import taskActivityRouter from "../server/src/routes/taskActivity";
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/cron", cronRouter);
 app.use("/api/project-tasks", projectTasksRouter);
 app.use("/api/requests", requestsRouter);
+app.use("/api/task-activity", taskActivityRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

@@ -227,6 +227,21 @@ router.patch("/bulk", async (req, res) => {
                          VALUES (@bucketId, @assignee)`
                       );
                   }
+
+                  // Insert acceptance criteria
+                  if (stageData.acceptanceCriteria && Array.isArray(stageData.acceptanceCriteria)) {
+                    for (const criteria of stageData.acceptanceCriteria) {
+                      if (criteria && criteria.trim()) {
+                        await transaction.request()
+                          .input("bucketId", bucketId)
+                          .input("criteria", criteria.trim())
+                          .query(
+                            `INSERT INTO timesheet_bucket_criteria (bucket_id, criteria)
+                             VALUES (@bucketId, @criteria)`
+                          );
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -283,6 +298,21 @@ router.patch("/bulk", async (req, res) => {
                     `INSERT INTO timesheet_bucket_assignees (bucket_id, employee_email)
                      VALUES (@bucketId, @assignee)`
                   );
+              }
+
+              // Insert acceptance criteria
+              if (stageData?.acceptanceCriteria && Array.isArray(stageData.acceptanceCriteria)) {
+                for (const criteria of stageData.acceptanceCriteria) {
+                  if (criteria && criteria.trim()) {
+                    await transaction.request()
+                      .input("bucketId", bucketId)
+                      .input("criteria", criteria.trim())
+                      .query(
+                        `INSERT INTO timesheet_bucket_criteria (bucket_id, criteria)
+                         VALUES (@bucketId, @criteria)`
+                      );
+                  }
+                }
               }
             }
           }

@@ -11,6 +11,7 @@ import projectsRouter from "./routes/projects";
 import cronRouter from "./routes/cron";
 import projectTasksRouter from "./routes/projectTasks";
 import requestsRouter from "./routes/requests";
+import taskActivityRouter from "./routes/taskActivity";
 
 // Load env variables
 dotenv.config();
@@ -32,6 +33,7 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/cron", cronRouter);
 app.use("/api/project-tasks", projectTasksRouter);
 app.use("/api/requests", requestsRouter);
+app.use("/api/task-activity", taskActivityRouter);
 
 // Health check
 app.get("/api/health", (_req, res) => {

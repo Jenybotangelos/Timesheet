@@ -70,6 +70,11 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
   const [savingEntry, setSavingEntry] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([userEmail]);
   const [projectFilter, setProjectFilter] = useState<string>("");
+  const [modalTab, setModalTab] = useState<"time" | "chat" | "attachments">("time");
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   // Fetch employees list
   useEffect(() => {
@@ -182,7 +187,12 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
       hourSlots: [{ from: currentHour, to: nextHour, description: "" }],
     };
     setEntryModal(modal);
+    setModalTab("time");
+    setComments([]);
+    setAttachments([]);
     checkConflicts(modal);
+    loadComments(task.bucketId);
+    loadAttachments(task.bucketId);
   }
 
   function updateTimeRange(fromTime: string, toTime: string) {
@@ -267,6 +277,78 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
     } finally {
       setSavingEntry(false);
     }
+  }
+
+  async function loadComments(bucketId: number) {
+    try {
+      const res = await fetch(`/api/task-activity/comments/${bucketId}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setComments(data);
+    } catch (err) { console.error("Failed to load comments:", err); }
+  }
+
+  async function postComment() {
+    if (!entryModal || !newComment.trim()) return;
+    try {
+      await fetch(`/api/task-activity/comments/${entryModal.task.bucketId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail, message: newComment }),
+      });
+      setNewComment("");
+      await loadComments(entryModal.task.bucketId);
+    } catch (err) { console.error("Failed to post comment:", err); }
+  }
+
+  async function loadAttachments(bucketId: number) {
+    try {
+      const res = await fetch(`/api/task-activity/attachments/${bucketId}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setAttachments(data);
+    } catch (err) { console.error("Failed to load attachments:", err); }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!entryModal || !e.target.files?.length) return;
+    const file = e.target.files[0];
+    setUploading(true);
+    try {
+      // Get presigned URL
+      const urlRes = await fetch(`/api/task-activity/upload-url?filename=${encodeURIComponent(file.name)}&bucketId=${entryModal.task.bucketId}`);
+      if (!urlRes.ok) {
+        const err = await urlRes.json();
+        alert(err.error || "Upload not available");
+        return;
+      }
+      const { url, key } = await urlRes.json();
+
+      // Upload to S3
+      await fetch(url, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+
+      // Save metadata
+      await fetch(`/api/task-activity/attachments/${entryModal.task.bucketId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail, filename: file.name, s3_key: key, file_size: file.size }),
+      });
+
+      await loadAttachments(entryModal.task.bucketId);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function downloadAttachment(id: number) {
+    try {
+      const res = await fetch(`/api/task-activity/download-url/${id}`);
+      if (!res.ok) { alert("Download not available"); return; }
+      const { url } = await res.json();
+      window.open(url, "_blank");
+    } catch (err) { console.error("Download failed:", err); }
   }
 
   if (loading) {
@@ -399,7 +481,7 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
                     return (
                     <div
                       key={`${task.taskId}-${task.bucketId}`}
-                      onClick={() => task.status === "in_progress" && openEntryModal(task)}
+                      onClick={() => task.status !== "not_started" && openEntryModal(task)}
                       className={`backdrop-blur-sm rounded-lg border p-4 hover:bg-white/15 transition-all cursor-pointer group ${
                         isOverdue ? "bg-red-500/10 border-red-500/30" : "bg-white/10 border-white/15"
                       }`}
@@ -564,115 +646,187 @@ export default function MyTasks({ userEmail }: { userEmail: string }) {
         )}
       </div>
 
-      {/* Time Entry Modal */}
+      {/* Task Modal */}
       {entryModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]" onClick={() => setEntryModal(null)}>
-          <div className="bg-[#1a1c2e] border border-white/20 rounded-xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto scroll-thin" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-white font-semibold text-lg mb-4">Task Submission</h2>
+          <div className="bg-[#1a1c2e] border border-white/20 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex overflow-hidden" onClick={(e) => e.stopPropagation()}>
 
-            {/* Task Info */}
-            <div className="bg-white/5 rounded-lg border border-white/10 p-3 mb-4 space-y-1">
-              <div className="text-xs text-white/40">Project: <span className="text-[#4fc3f7]">{entryModal.task.projectName}</span></div>
-              <div className="text-xs text-white/40">Task: <span className="text-white">{entryModal.task.taskName}</span></div>
-              <div className="text-xs text-white/40">Stage: <span className="text-white">{entryModal.task.bucketName}</span></div>
-            </div>
-
-            {/* Date */}
-            <div className="mb-3">
-              <label className="block text-xs text-white/50 mb-1">Date</label>
-              <input
-                type="date"
-                value={entryModal.date}
-                onChange={(e) => {
-                  const updated = { ...entryModal, date: e.target.value };
-                  setEntryModal(updated);
-                  checkConflicts(updated);
-                }}
-                className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
-              />
-            </div>
-
-            {/* Time Range */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="block text-xs text-white/50 mb-1">From</label>
-                <input
-                  type="time"
-                  value={entryModal.fromTime}
-                  onChange={(e) => updateTimeRange(e.target.value, entryModal.toTime)}
-                  className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
-                />
+            {/* LEFT — Task Details + Time Entry + Attachments */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="px-6 pt-5 pb-3 border-b border-white/10">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-white font-semibold text-lg">{entryModal.task.taskName}</h2>
+                  <button onClick={() => setEntryModal(null)} className="text-white/40 hover:text-white text-lg">×</button>
+                </div>
+                <div className="flex gap-4 text-xs text-white/40">
+                  <span>Project: <span className="text-[#4fc3f7]">{entryModal.task.projectName}</span></span>
+                  <span>Stage: <span className="text-white/70">{entryModal.task.bucketName}</span></span>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-white/50 mb-1">To</label>
-                <input
-                  type="time"
-                  value={entryModal.toTime}
-                  onChange={(e) => updateTimeRange(entryModal.fromTime, e.target.value)}
-                  className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
-                />
-              </div>
-            </div>
 
-            {/* Hourly Slots with Description */}
-            {entryModal.hourSlots.length > 0 && (
-              <div className="mb-4 space-y-3">
-                <label className="block text-xs text-white/50">Description per hour</label>
-                {entryModal.hourSlots.map((slot, idx) => (
-                  <div key={idx}>
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs text-white/40 whitespace-nowrap pt-2 min-w-[90px]">
-                        {slot.from} — {slot.to}
-                      </span>
-                      <input
-                        type="text"
-                        value={slot.description}
-                        onChange={(e) => {
-                          const updated = [...entryModal.hourSlots];
-                          updated[idx] = { ...updated[idx], description: e.target.value };
-                          setEntryModal({ ...entryModal, hourSlots: updated });
-                        }}
-                        placeholder="What did you work on?"
-                        className="flex-1 border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
-                      />
+              {/* Tabs */}
+              <div className="px-6 pt-3 flex gap-1">
+                <button onClick={() => setModalTab("time")}
+                  className={`px-4 py-2 rounded-t-lg text-xs font-medium border-b-2 transition-all ${
+                    modalTab === "time" ? "border-[#4fc3f7] text-[#4fc3f7] bg-white/5" : "border-transparent text-white/40 hover:text-white/70"
+                  }`}>Time Entry</button>
+                <button onClick={() => setModalTab("attachments")}
+                  className={`px-4 py-2 rounded-t-lg text-xs font-medium border-b-2 transition-all ${
+                    modalTab === "attachments" ? "border-[#4fc3f7] text-[#4fc3f7] bg-white/5" : "border-transparent text-white/40 hover:text-white/70"
+                  }`}>Attachments ({attachments.length})</button>
+              </div>
+
+              {/* Tab Content */}
+              <div className="flex-1 overflow-y-auto scroll-thin px-6 py-4">
+                {/* Time Entry Tab */}
+                {modalTab === "time" && (
+                  <div>
+                    {entryModal.task.status === "completed" ? (
+                      <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 text-center">
+                        <span className="text-green-400 text-sm font-medium">✓ This task is completed</span>
+                        <p className="text-white/40 text-xs mt-1">Time submission is disabled for completed tasks</p>
+                      </div>
+                    ) : (
+                    <div>
+                    <div className="mb-3">
+                      <label className="block text-xs text-white/50 mb-1">Date</label>
+                      <input type="date" value={entryModal.date}
+                        onChange={(e) => { const updated = { ...entryModal, date: e.target.value }; setEntryModal(updated); checkConflicts(updated); }}
+                        className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]" />
                     </div>
-                    {slot.conflict && (
-                      <div className="ml-[102px] mt-1 text-xs text-yellow-400">
-                        ⚠️ Already submitted: "{slot.conflict}" — will be overwritten
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div>
+                        <label className="block text-xs text-white/50 mb-1">From</label>
+                        <input type="time" value={entryModal.fromTime}
+                          onChange={(e) => updateTimeRange(e.target.value, entryModal.toTime)}
+                          className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-white/50 mb-1">To</label>
+                        <input type="time" value={entryModal.toTime}
+                          onChange={(e) => updateTimeRange(entryModal.fromTime, e.target.value)}
+                          className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]" />
+                      </div>
+                    </div>
+                    {entryModal.hourSlots.length > 0 && (
+                      <div className="mb-4 space-y-3">
+                        <label className="block text-xs text-white/50">Description per hour</label>
+                        {entryModal.hourSlots.map((slot, idx) => (
+                          <div key={idx}>
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-white/40 whitespace-nowrap pt-2 min-w-[90px]">{slot.from} — {slot.to}</span>
+                              <input type="text" value={slot.description}
+                                onChange={(e) => { const updated = [...entryModal.hourSlots]; updated[idx] = { ...updated[idx], description: e.target.value }; setEntryModal({ ...entryModal, hourSlots: updated }); }}
+                                placeholder="What did you work on?"
+                                className="flex-1 border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]" />
+                            </div>
+                            {slot.conflict && (
+                              <div className="ml-[102px] mt-1 text-xs text-yellow-400">⚠️ Already submitted: "{slot.conflict}" — will be overwritten</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-3">
+                      <button onClick={saveTimeEntry} disabled={savingEntry || entryModal.hourSlots.length === 0}
+                        className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg text-sm font-medium shadow-md disabled:opacity-50">
+                        {savingEntry ? "Saving..." : "Submit Task"}
+                      </button>
+                      <button onClick={() => { setEntryModal({ ...entryModal, date: new Date().toISOString().split("T")[0] }); saveTimeEntry(); }}
+                        disabled={savingEntry || entryModal.hourSlots.length === 0}
+                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-lg text-sm font-medium shadow-md disabled:opacity-50">
+                        {savingEntry ? "Saving..." : "Submit for Today"}
+                      </button>
+                    </div>
+                    </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Attachments Tab */}
+                {modalTab === "attachments" && (
+                  <div>
+                    <label className="flex items-center justify-center w-full py-4 mb-3 border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:border-[#4fc3f7]/50 hover:bg-white/5 transition-all">
+                      <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading} />
+                      <span className="text-white/40 text-sm">{uploading ? "Uploading..." : "Click to upload a file"}</span>
+                    </label>
+                    {attachments.length === 0 ? (
+                      <p className="text-white/30 text-xs text-center py-4">No attachments yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {attachments.map((a: any) => (
+                          <div key={a.id} className="flex items-center justify-between bg-white/5 rounded-lg border border-white/10 px-3 py-2">
+                            <div>
+                              <span className="text-white text-sm">{a.filename}</span>
+                              <span className="text-white/30 text-xs ml-2">{a.file_size ? `${(a.file_size / 1024).toFixed(0)} KB` : ""}</span>
+                              <p className="text-white/30 text-xs">{a.uploaded_by_name || a.uploaded_by.split("@")[0]} · {new Date(a.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <div className="flex gap-2 shrink-0">
+                              <button onClick={() => downloadAttachment(a.id)}
+                                className="px-3 py-1 bg-white/10 text-white/70 border border-white/20 rounded-lg text-xs hover:bg-white/20">View</button>
+                              <button onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/task-activity/download-url/${a.id}`);
+                                  if (!res.ok) return;
+                                  const { url } = await res.json();
+                                  const link = document.createElement("a"); link.href = url; link.download = a.filename; link.click();
+                                } catch {}
+                              }}
+                                className="px-3 py-1 bg-[#4fc3f7]/20 text-[#4fc3f7] border border-[#4fc3f7]/30 rounded-lg text-xs hover:bg-[#4fc3f7]/30">Download</button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT — Chat Sidebar */}
+            <div className="w-80 border-l border-white/10 flex flex-col bg-white/5">
+              <div className="px-4 py-4 border-b border-white/10">
+                <h3 className="text-white font-semibold text-sm">Task Chat</h3>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto scroll-thin px-4 py-3 space-y-3">
+                {comments.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                    <p className="text-white/30 text-sm font-medium mb-1">Start the conversation</p>
+                    <p className="text-white/20 text-xs">Send a message to discuss this task</p>
+                  </div>
+                ) : comments.map((c: any) => (
+                  <div key={c.id} className={`flex flex-col ${c.employee_email === userEmail ? "items-end" : "items-start"}`}>
+                    <span className="text-white/40 text-xs mb-1">{c.employee_name || c.employee_email.split("@")[0]}</span>
+                    <div className={`max-w-[90%] rounded-lg px-3 py-2 ${
+                      c.employee_email === userEmail ? "bg-[#4fc3f7]/20 border border-[#4fc3f7]/30" : "bg-white/10 border border-white/15"
+                    }`}>
+                      <p className="text-white text-sm">{c.message}</p>
+                    </div>
+                    <span className="text-white/20 text-xs mt-0.5">
+                      {new Date(c.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
                 ))}
               </div>
-            )}
 
-            {/* Buttons */}
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setEntryModal(null)}
-                className="px-4 py-2 bg-white/5 border border-white/20 text-white/60 rounded-lg hover:bg-white/10 text-sm transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveTimeEntry}
-                disabled={savingEntry || entryModal.hourSlots.length === 0}
-                className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm font-medium transition-all shadow-md disabled:opacity-50"
-              >
-                {savingEntry ? "Saving..." : "Submit Task"}
-              </button>
-              <button
-                onClick={() => {
-                  const today = new Date().toISOString().split("T")[0];
-                  setEntryModal({ ...entryModal, date: today });
-                  saveTimeEntry();
-                }}
-                disabled={savingEntry || entryModal.hourSlots.length === 0}
-                className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-lg hover:from-green-400 hover:to-green-600 text-sm font-medium transition-all shadow-md disabled:opacity-50"
-              >
-                {savingEntry ? "Saving..." : "Submit for Today"}
-              </button>
+              {/* Message Input */}
+              <div className="px-4 py-3 border-t border-white/10">
+                <div className="flex gap-2">
+                  <input type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && postComment()}
+                    placeholder="Type a message..."
+                    className="flex-1 border border-white/20 rounded-lg px-3 py-2 text-sm bg-white/10 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]" />
+                  <button onClick={postComment} disabled={!newComment.trim()}
+                    className="px-3 py-2 bg-[#4fc3f7]/20 text-[#4fc3f7] rounded-lg hover:bg-[#4fc3f7]/30 disabled:opacity-30 transition-all">
+                    ➤
+                  </button>
+                </div>
+              </div>
             </div>
+
           </div>
         </div>
       )}

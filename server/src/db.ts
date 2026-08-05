@@ -19,7 +19,7 @@ const dbConfig: sql.config = {
   },
   options: {
     encrypt: true,
-    trustServerCertificate: false,
+    trustServerCertificate: true,
   },
 };
 
