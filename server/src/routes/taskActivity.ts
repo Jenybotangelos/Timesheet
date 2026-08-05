@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getPool } from "../db";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { v4 as uuid } from "uuid";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -97,7 +97,7 @@ router.get("/upload-url", async (req, res) => {
       return res.status(400).json({ error: "filename and bucketId are required" });
     }
 
-    const key = `attachments/${bucketId}/${uuid()}-${filename}`;
+    const key = `attachments/${bucketId}/${crypto.randomUUID()}-${filename}`;
     const command = new PutObjectCommand({ Bucket: BUCKET, Key: key });
     const url = await getSignedUrl(s3, command, { expiresIn: 300 });
 
