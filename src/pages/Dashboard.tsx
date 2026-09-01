@@ -47,7 +47,15 @@ function getHalfHourStatus(
   return { first, second };
 }
 
-export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail: string; userRole: string; onLogout: () => void }) {
+export default function Dashboard({
+  userEmail,
+  userRole,
+  onLogout,
+}: {
+  userEmail: string;
+  userRole: string;
+  onLogout: () => void;
+}) {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
@@ -121,26 +129,28 @@ export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#16213e] to-[#0f3460]">
       {/* Header bar */}
-      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight text-white">Task Sheet</h1>
+      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-white">Task Sheet</h1>
         <div className="flex items-center gap-3">
-          <span className="text-white/60 text-sm">{userEmail}</span>
+          <span className="text-white/60 text-xs sm:text-sm truncate max-w-[200px] sm:max-w-none">
+            {userEmail}
+          </span>
           <button
             onClick={onLogout}
-            className="px-3 py-1.5 bg-white/10 border border-white/30 text-white/80 rounded-lg hover:bg-white/20 text-sm transition-all"
+            className="px-3 py-1.5 bg-white/10 border border-white/30 text-white/80 rounded-lg hover:bg-white/20 text-xs sm:text-sm transition-all"
           >
             Logout
           </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto p-6">
+      <div className="max-w-7xl mx-auto p-3 sm:p-6 pb-24">
         {/* Controls bar */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 flex flex-wrap items-end gap-4 shadow-lg relative z-20">
+        <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-4 sm:p-5 mb-4 sm:mb-6 flex flex-wrap items-end gap-3 sm:gap-4 shadow-lg relative z-20">
           {/* Multiselect Dropdown */}
-          <div className="relative flex-1 min-w-[250px]" ref={dropdownRef}>
+          <div className="relative flex-1 min-w-[200px] sm:min-w-[250px]" ref={dropdownRef}>
             <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wide">
-              People
+              PEOPLE
             </label>
             <button
               type="button"
@@ -159,7 +169,10 @@ export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail
                       {emp.name}
                       <span
                         role="button"
-                        onClick={(e) => { e.stopPropagation(); toggleEmployee(emp.email); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleEmployee(emp.email);
+                        }}
                         className="hover:text-red-400 cursor-pointer"
                       >
                         ×
@@ -192,117 +205,120 @@ export default function Dashboard({ userEmail, userRole, onLogout }: { userEmail
           </div>
 
           {/* Date Picker */}
-          <div>
+          <div className="w-full sm:w-auto">
             <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wide">
-              Date
+              DATE
             </label>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] transition-all"
+              className="w-full sm:w-auto border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] transition-all"
             />
           </div>
 
           {/* Action Buttons */}
-          <button
-            onClick={() => navigate("/edit")}
-            className="px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all"
-          >
-            Edit Hours
-          </button>
-          <button
-            onClick={() => navigate("/submit")}
-            className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm font-medium transition-all shadow-md"
-          >
-            Submit Task
-          </button>
-          <button
-            onClick={() => navigate("/my-tasks")}
-            className="px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg hover:from-teal-400 hover:to-cyan-500 text-sm font-medium transition-all shadow-md"
-          >
-            My Tasks
-          </button>
-          {userRole === "admin" && (
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
-              onClick={() => navigate("/projects")}
-              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg hover:from-purple-400 hover:to-purple-600 text-sm font-medium transition-all shadow-md"
+              onClick={() => navigate("/edit")}
+              className="flex-1 sm:flex-none px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all text-center"
             >
-              Projects
+              Edit Hours
             </button>
-          )}
+            <button
+              onClick={() => navigate("/submit")}
+              className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm font-medium transition-all shadow-md text-center"
+            >
+              Submit Task
+            </button>
+            <button
+              onClick={() => navigate("/my-tasks")}
+              className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg hover:from-teal-400 hover:to-cyan-500 text-sm font-medium transition-all shadow-md text-center"
+            >
+              My Tasks
+            </button>
+            {userRole === "admin" && (
+              <button
+                onClick={() => navigate("/projects")}
+                className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg hover:from-purple-400 hover:to-purple-600 text-sm font-medium transition-all shadow-md text-center"
+              >
+                Projects
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Calendar Grid */}
+        {/* Calendar Grid with responsive horizontal scrolling */}
         {selectedEmployees.length > 0 && (
           <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden shadow-xl">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
-                  <th className="text-left px-4 py-3 font-semibold text-white border-r border-white/20 w-[70px]">
-                    Time
-                  </th>
-                  {selectedEmployees.map((emp) => (
-                    <th key={emp.email} className="px-4 py-3 font-semibold text-center text-white border-r border-white/20 last:border-r-0">
-                      {emp.name}
+            <div className="overflow-x-auto scroll-thin">
+              <table className="w-full text-sm min-w-[320px]">
+                <thead>
+                  <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
+                    <th className="text-left px-3 sm:px-4 py-3 font-semibold text-white border-r border-white/20 w-[65px] sm:w-[70px]">
+                      Time
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {hours.map((h, idx) => (
-                  <tr key={h} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
-                    <td className="px-4 py-0 font-medium text-white/60 border border-white/10 text-xs align-middle">
-                      {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
-                    </td>
-                    {selectedEmployees.map((emp) => {
-                      const blocks = getBlocksForEmployee(emp.email);
-                      const { first, second } = getHalfHourStatus(h, blocks);
-                      return (
-                        <td
-                          key={emp.email}
-                          className="p-0 border border-white/10"
-                        >
-                          <div className="flex flex-col h-full">
-                            <div
-                              className={`h-[22px] ${
-                                first
-                                  ? "bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]"
-                                  : ""
-                              }`}
-                            />
-                            <div className="border-t border-white/[0.06]" />
-                            <div
-                              className={`h-[22px] ${
-                                second
-                                  ? "bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]"
-                                  : ""
-                              }`}
-                            />
-                          </div>
-                        </td>
-                      );
-                    })}
+                    {selectedEmployees.map((emp) => (
+                      <th
+                        key={emp.email}
+                        className="px-3 sm:px-4 py-3 font-semibold text-center text-white border-r border-white/20 last:border-r-0 min-w-[120px]"
+                      >
+                        {emp.name}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-                {/* Footer row: total hours */}
-                <tr className="bg-white/10 font-semibold border-t border-white/20">
-                  <td className="px-4 py-3 text-white/80 border-r border-white/10 text-xs uppercase">
-                    Total
-                  </td>
-                  {selectedEmployees.map((emp) => (
-                    <td key={emp.email} className="px-4 py-3 text-center text-[#4fc3f7] font-bold border-r border-white/10 last:border-r-0">
-                      {getTotalHours(emp.email)}h
-                    </td>
+                </thead>
+                <tbody>
+                  {hours.map((h, idx) => (
+                    <tr key={h} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
+                      <td className="px-3 sm:px-4 py-0 font-medium text-white/60 border border-white/10 text-xs align-middle whitespace-nowrap">
+                        {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
+                      </td>
+                      {selectedEmployees.map((emp) => {
+                        const blocks = getBlocksForEmployee(emp.email);
+                        const { first, second } = getHalfHourStatus(h, blocks);
+                        return (
+                          <td key={emp.email} className="p-0 border border-white/10">
+                            <div className="flex flex-col h-full">
+                              <div
+                                className={`h-[20px] sm:h-[22px] ${
+                                  first ? "bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]" : ""
+                                }`}
+                              />
+                              <div className="border-t border-white/[0.06]" />
+                              <div
+                                className={`h-[20px] sm:h-[22px] ${
+                                  second ? "bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]" : ""
+                                }`}
+                              />
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
                   ))}
-                </tr>
-              </tbody>
-            </table>
+                  {/* Footer row: total hours */}
+                  <tr className="bg-white/10 font-semibold border-t border-white/20">
+                    <td className="px-3 sm:px-4 py-3 text-white/80 border-r border-white/10 text-xs uppercase">
+                      Total
+                    </td>
+                    {selectedEmployees.map((emp) => (
+                      <td
+                        key={emp.email}
+                        className="px-3 sm:px-4 py-3 text-center text-[#4fc3f7] font-bold border-r border-white/10 last:border-r-0"
+                      >
+                        {getTotalHours(emp.email)}h
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {selectedEmployees.length === 0 && (
-          <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-16 text-center shadow-xl">
+          <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-10 sm:p-16 text-center shadow-xl">
             <p className="text-white/40 text-sm">Select employees to view their schedule</p>
           </div>
         )}

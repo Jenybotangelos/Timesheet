@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 const API_BASE = "/api";
 
-
 // Check if a date is editable (today and yesterday = 2 days total)
 function isDateEditable(date: string): boolean {
   const selectedDate = new Date(date);
@@ -17,7 +16,7 @@ function isDateEditable(date: string): boolean {
 
 interface HourRow {
   from: string; // IST HH:mm
-  to: string;   // IST HH:mm
+  to: string; // IST HH:mm
   taskDescription: string;
   projectId: number | null;
   projectTaskId: number | null;
@@ -48,11 +47,20 @@ interface AssignmentProject {
   tasks: AssignmentTask[];
 }
 
-export default function TaskSubmission({ userEmail, userRole }: { userEmail: string; userRole: string }) {
+export default function TaskSubmission({
+  userEmail,
+  userRole,
+}: {
+  userEmail: string;
+  userRole: string;
+}) {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"my-tasks" | "weekly-report">("my-tasks");
   const [selectedDate, setSelectedDate] = useState(() => {
-    return sessionStorage.getItem("tasksheet_selected_date") || new Date().toISOString().split("T")[0];
+    return (
+      sessionStorage.getItem("tasksheet_selected_date") ||
+      new Date().toISOString().split("T")[0]
+    );
   });
   const [hours, setHours] = useState<HourRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,8 +76,8 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   // Weekly report state (admin only)
   const [reportStartDate, setReportStartDate] = useState(() => {
     const d = new Date();
-    const day = d.getDay(); // 0=Sun,1=Mon,...,6=Sat
-    const diff = day === 0 ? -13 : -day - 6; // Previous week Monday
+    const day = d.getDay();
+    const diff = day === 0 ? -13 : -day - 6;
     const mon = new Date(d);
     mon.setDate(d.getDate() + diff);
     return mon.toISOString().split("T")[0];
@@ -77,7 +85,7 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   const [reportEndDate, setReportEndDate] = useState(() => {
     const d = new Date();
     const day = d.getDay();
-    const diff = day === 0 ? -7 : -day; // Previous week Sunday
+    const diff = day === 0 ? -7 : -day;
     const sun = new Date(d);
     sun.setDate(d.getDate() + diff);
     return sun.toISOString().split("T")[0];
@@ -90,7 +98,6 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   const [empDropdownOpen, setEmpDropdownOpen] = useState(false);
   const [projDropdownOpen, setProjDropdownOpen] = useState(false);
 
-  // Close dropdowns on any click outside them
   useEffect(() => {
     if (!empDropdownOpen && !projDropdownOpen) return;
     const handleClick = (e: MouseEvent) => {
@@ -133,7 +140,6 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
     }
   }
 
-  // Fetch active projects and assignments
   useEffect(() => {
     fetch(`${API_BASE}/projects`)
       .then((r) => r.json())
@@ -143,18 +149,18 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
       .then((r) => r.json())
       .then((data) => setAssignments(data))
       .catch((err) => console.error("Failed to fetch assignments:", err));
-    // Fetch employees for admin weekly report
     fetch(`${API_BASE}/employees`)
       .then((r) => r.json())
       .then((data) => setEmployees(data))
       .catch((err) => console.error("Failed to fetch employees:", err));
   }, []);
 
-  // Fetch weekly report data
   async function fetchWeeklyReport() {
     setWeeklyLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/tasks/weekly?startDate=${reportStartDate}&endDate=${reportEndDate}&email=${userEmail}`);
+      const res = await fetch(
+        `${API_BASE}/tasks/weekly?startDate=${reportStartDate}&endDate=${reportEndDate}&email=${userEmail}`
+      );
       if (res.ok) {
         const data = await res.json();
         setWeeklyData(data);
@@ -201,7 +207,6 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   }, [selectedDate]);
 
   function startEditBlocks() {
-    // Group consecutive hours into blocks for editing, marking locked ones
     if (hours.length === 0) {
       setBlocks([{ from: "09:00", to: "10:00" }]);
     } else {
@@ -240,29 +245,31 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   }
 
   async function saveBlocks() {
-    // Check for overnight blocks (to < from, but allow to = 00:00 as midnight end-of-day)
     for (const b of blocks) {
       const [fh, fm] = b.from.split(":").map(Number);
       const [th, tm] = b.to.split(":").map(Number);
       const fromMin = fh * 60 + fm;
       const toMin = th * 60 + tm;
       if (toMin <= fromMin && toMin !== 0) {
-        alert(`Time slot ${b.from} to ${b.to} crosses midnight. Please split it — add hours before midnight to today and hours after midnight to the next day.`);
+        alert(
+          `Time slot ${b.from} to ${b.to} crosses midnight. Please split it — add hours before midnight to today and hours after midnight to the next day.`
+        );
         return;
       }
     }
 
-    // Check for overlapping blocks
     const sorted = [...blocks].sort((a, b) => {
       const [ah, am] = a.from.split(":").map(Number);
       const [bh, bm] = b.from.split(":").map(Number);
-      return (ah * 60 + am) - (bh * 60 + bm);
+      return ah * 60 + am - (bh * 60 + bm);
     });
     for (let i = 0; i < sorted.length - 1; i++) {
       const [th, tm] = sorted[i].to.split(":").map(Number);
       const [nh, nm] = sorted[i + 1].from.split(":").map(Number);
-      if ((th * 60 + tm) > (nh * 60 + nm)) {
-        alert(`Time slots overlap: ${sorted[i].from} – ${sorted[i].to} and ${sorted[i + 1].from} – ${sorted[i + 1].to}. Please fix the overlapping hours.`);
+      if (th * 60 + tm > nh * 60 + nm) {
+        alert(
+          `Time slots overlap: ${sorted[i].from} – ${sorted[i].to} and ${sorted[i + 1].from} – ${sorted[i + 1].to}. Please fix the overlapping hours.`
+        );
         return;
       }
     }
@@ -302,11 +309,17 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   }
 
   function updateProject(index: number, projectId: number | null) {
-    setHours(hours.map((h, i) => (i === index ? { ...h, projectId, projectTaskId: null, bucketId: null } : h)));
+    setHours(
+      hours.map((h, i) =>
+        i === index ? { ...h, projectId, projectTaskId: null, bucketId: null } : h
+      )
+    );
   }
 
   function updateProjectTask(index: number, projectTaskId: number | null) {
-    setHours(hours.map((h, i) => (i === index ? { ...h, projectTaskId, bucketId: null } : h)));
+    setHours(
+      hours.map((h, i) => (i === index ? { ...h, projectTaskId, bucketId: null } : h))
+    );
   }
 
   function updateBucket(index: number, bucketId: number | null) {
@@ -314,7 +327,12 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   }
 
   async function handleSave() {
-    if (!confirm("After saving, hours with task descriptions cannot have their time changed. Continue?")) return;
+    if (
+      !confirm(
+        "After saving, hours with task descriptions cannot have their time changed. Continue?"
+      )
+    )
+      return;
     setSaving(true);
     try {
       const payload = {
@@ -408,15 +426,19 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#16213e] to-[#0f3460]">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center gap-4">
-          <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">← Back</button>
-          <h1 className="text-xl font-semibold text-white">{viewMode === "weekly-report" ? "Reports" : "My Tasks"}</h1>
+      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-4">
+        <div className="max-w-5xl mx-auto flex flex-wrap items-center gap-4">
+          <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">
+            ← Back
+          </button>
+          <h1 className="text-lg sm:text-xl font-semibold text-white">
+            {viewMode === "weekly-report" ? "Reports" : "My Tasks"}
+          </h1>
           {userRole === "admin" && (
             <div className="ml-auto flex bg-white/10 rounded-lg border border-white/20 p-0.5">
               <button
                 onClick={() => setViewMode("my-tasks")}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                   viewMode === "my-tasks"
                     ? "bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white shadow"
                     : "text-white/60 hover:text-white"
@@ -426,7 +448,7 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
               </button>
               <button
                 onClick={() => setViewMode("weekly-report")}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                   viewMode === "weekly-report"
                     ? "bg-gradient-to-r from-purple-500 to-purple-700 text-white shadow"
                     : "text-white/60 hover:text-white"
@@ -439,428 +461,417 @@ export default function TaskSubmission({ userEmail, userRole }: { userEmail: str
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto p-6">
+      <div className="max-w-5xl mx-auto p-4 sm:p-6 pb-24">
         {/* Weekly Report View (Admin) */}
         {viewMode === "weekly-report" && userRole === "admin" ? (
           <>
-            {/* Date range bar on top */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 px-5 py-3 mb-4 shadow-lg flex flex-wrap items-center gap-4">
-              <span className="text-xs font-semibold text-white/70 uppercase tracking-wide">Date Range</span>
+            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 px-4 sm:px-5 py-3 mb-4 shadow-lg flex flex-wrap items-center gap-4">
+              <span className="text-xs font-semibold text-white/70 uppercase tracking-wide">
+                Date Range
+              </span>
               <input
                 type="date"
                 value={reportStartDate}
                 onChange={(e) => setReportStartDate(e.target.value)}
-                className="border border-white/30 rounded-lg px-3 py-1.5 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                className="border border-white/30 rounded-lg px-2 py-1 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
               />
-              <span className="text-white/40 text-sm">to</span>
+              <span className="text-white/50 text-sm">to</span>
               <input
                 type="date"
                 value={reportEndDate}
                 onChange={(e) => setReportEndDate(e.target.value)}
-                className="border border-white/30 rounded-lg px-3 py-1.5 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                className="border border-white/30 rounded-lg px-2 py-1 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
               />
-              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium border border-purple-500/30 ml-auto">Admin</span>
             </div>
 
-            {/* Report Table */}
             {weeklyLoading ? (
               <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-16 text-center shadow-xl">
-                <p className="text-white/40 text-sm">Loading report...</p>
+                <p className="text-white/40 text-sm">Loading weekly report...</p>
               </div>
-            ) : (() => {
-              let filtered = weeklyData;
-              if (selectedEmployees.length > 0) {
-                filtered = filtered.filter((r) => selectedEmployees.includes(r.employee_email));
-              }
-              if (selectedProjects.length > 0) {
-                filtered = filtered.filter((r) => selectedProjects.includes(r.project_id));
-              }
-              return (
-                <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-visible shadow-xl relative">
-                  <table className="w-full text-sm">
+            ) : (
+              <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[600px]">
                     <thead>
                       <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
-                        {/* Employee - clickable header with dropdown */}
-                        <th className="text-left font-semibold text-white relative p-0">
-                          <button
-                            type="button"
-                            data-dropdown
-                            onClick={() => { setEmpDropdownOpen(!empDropdownOpen); setProjDropdownOpen(false); }}
-                            className="w-full h-full px-4 py-3 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
-                          >
-                            Employee
-                            {selectedEmployees.length > 0 && (
-                              <span className="bg-white/25 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium">{selectedEmployees.length}</span>
-                            )}
-                            <span className="text-white/60 text-xs">▾</span>
-                          </button>
-                          {empDropdownOpen && (
-                            <div data-dropdown className="absolute top-full left-2 mt-1 min-w-[200px] bg-[#1e293b] border border-white/20 rounded-xl shadow-2xl py-1 max-h-56 overflow-y-auto" style={{zIndex: 60}}>
-                              {selectedEmployees.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedEmployees([])}
-                                  className="w-full text-left px-3 py-1.5 text-[11px] text-[#4fc3f7] hover:bg-white/10 border-b border-white/10"
-                                >
-                                  Clear all
-                                </button>
-                              )}
-                              {employees.map((emp) => (
-                                <label key={emp.email} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/10 transition-colors">
-                                  <input type="checkbox" checked={selectedEmployees.includes(emp.email)} onChange={() => toggleReportEmployee(emp.email)} className="accent-[#4fc3f7] w-3.5 h-3.5 rounded" />
-                                  <span className="text-xs text-white/90">{emp.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </th>
-                        <th className="px-4 py-3 text-left font-semibold text-white min-w-[150px]">Date</th>
-                        <th className="px-4 py-3 text-left font-semibold text-white min-w-[150px]">Time</th>
-                        {/* Project - clickable header with dropdown */}
-                        <th className="text-left font-semibold text-white relative p-0">
-                          <button
-                            type="button"
-                            data-dropdown
-                            onClick={() => { setProjDropdownOpen(!projDropdownOpen); setEmpDropdownOpen(false); }}
-                            className="w-full h-full px-4 py-3 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
-                          >
-                            Project
-                            {selectedProjects.length > 0 && (
-                              <span className="bg-white/25 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium">{selectedProjects.length}</span>
-                            )}
-                            <span className="text-white/60 text-xs">▾</span>
-                          </button>
-                          {projDropdownOpen && (
-                            <div data-dropdown className="absolute top-full left-2 mt-1 min-w-[200px] bg-[#1e293b] border border-white/20 rounded-xl shadow-2xl py-1 max-h-56 overflow-y-auto" style={{zIndex: 60}}>
-                              {selectedProjects.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedProjects([])}
-                                  className="w-full text-left px-3 py-1.5 text-[11px] text-[#4fc3f7] hover:bg-white/10 border-b border-white/10"
-                                >
-                                  Clear all
-                                </button>
-                              )}
-                              {projects.map((p) => (
-                                <label key={p.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/10 transition-colors">
-                                  <input type="checkbox" checked={selectedProjects.includes(p.id)} onChange={() => toggleReportProject(p.id)} className="accent-[#4fc3f7] w-3.5 h-3.5 rounded" />
-                                  <span className="text-xs text-white/90">{p.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-white">Employee</th>
+                        <th className="px-4 py-3 text-left font-semibold text-white">Date</th>
+                        <th className="px-4 py-3 text-left font-semibold text-white">Time</th>
+                        <th className="px-4 py-3 text-left font-semibold text-white">Project</th>
                         <th className="px-4 py-3 text-left font-semibold text-white">Task Description</th>
                         <th className="px-4 py-3 text-left font-semibold text-white w-[90px]">Status</th>
                       </tr>
                     </thead>
-                    {filtered.length === 0 ? (
-                      <tbody>
-                        <tr>
-                          <td colSpan={6} className="px-4 py-16 text-center text-white/40 text-sm">No tasks found for this date range</td>
-                        </tr>
-                      </tbody>
-                    ) : (
-                    <>
                     <tbody>
-                      {filtered.map((t: any, idx: number) => {
-                        const fromIst = t.from_time_ist || "";
-                        const toIst = t.to_time_ist || "";
-                        const dateStr = typeof t.task_date === "string" ? t.task_date.split("T")[0] : new Date(t.task_date).toISOString().split("T")[0];
+                      {weeklyData.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-16 text-center text-white/40 text-sm">
+                            No tasks found for this date range
+                          </td>
+                        </tr>
+                      ) : (
+                        weeklyData.map((t: any, idx: number) => {
+                          const fromIst = t.from_time_ist || "";
+                          const toIst = t.to_time_ist || "";
+                          const dateStr =
+                            typeof t.task_date === "string"
+                              ? t.task_date.split("T")[0]
+                              : new Date(t.task_date).toISOString().split("T")[0];
+                          return (
+                            <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
+                              <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs font-medium whitespace-nowrap">
+                                {t.employee_name}
+                              </td>
+                              <td className="px-4 py-2 text-white/70 border-t border-white/10 text-xs whitespace-nowrap">
+                                {formatDateShort(dateStr)}
+                              </td>
+                              <td className="px-4 py-2 text-[#4fc3f7] font-medium border-t border-white/10 text-xs whitespace-nowrap">
+                                {fromIst && toIst ? `${fromIst} – ${toIst}` : "—"}
+                              </td>
+                              <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
+                                {t.project_name || "—"}
+                              </td>
+                              <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs">
+                                {t.task_description}
+                              </td>
+                              <td className="px-4 py-2 border-t border-white/10 whitespace-nowrap">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                    t.status === "submitted"
+                                      ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                      : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                                  }`}
+                                >
+                                  {t.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Date picker + status */}
+            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-4 sm:p-5 mb-4 sm:mb-6 shadow-lg flex flex-wrap items-end gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wide">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                />
+              </div>
+              {submitted && (
+                <span className="px-3 py-2 bg-green-500/20 text-green-400 rounded-lg text-sm font-medium border border-green-500/30">
+                  ✓ Submitted
+                </span>
+              )}
+              {status === "draft" && !submitted && (
+                <span className="px-3 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm font-medium border border-yellow-500/30">
+                  Draft Saved
+                </span>
+              )}
+              {isEditable && !editingBlocks && (
+                <button
+                  onClick={startEditBlocks}
+                  className="px-3 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all"
+                >
+                  Edit Hours
+                </button>
+              )}
+              <div className="ml-auto text-base sm:text-lg font-semibold text-[#4fc3f7]">
+                Total:{" "}
+                {(() => {
+                  const totalMinutes = hours.reduce((sum, h) => {
+                    if (!h.from || !h.to) return sum;
+                    const [fh, fm] = h.from.split(":").map(Number);
+                    const [th, tm] = h.to.split(":").map(Number);
+                    let diff = th * 60 + tm - (fh * 60 + fm);
+                    if (diff < 0) diff += 1440;
+                    return sum + diff;
+                  }, 0);
+                  const hrs = Math.floor(totalMinutes / 60);
+                  const mins = totalMinutes % 60;
+                  return mins > 0 ? `${hrs} hrs ${mins} mins` : `${hrs} hrs`;
+                })()}
+              </div>
+            </div>
+
+            {/* Edit Blocks Panel */}
+            {editingBlocks && (
+              <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-4 sm:p-5 mb-4 sm:mb-6 shadow-lg">
+                <h3 className="text-white font-semibold mb-3">Edit Working Hours</h3>
+                {status === "draft" && (
+                  <p className="text-yellow-400/80 text-xs mb-3">
+                    Hours with saved tasks are locked and cannot be changed.
+                  </p>
+                )}
+                <div className="space-y-2 mb-4">
+                  {blocks.map((block, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-center gap-3 ${block.locked ? "opacity-50" : ""}`}
+                    >
+                      <input
+                        type="time"
+                        value={block.from}
+                        onChange={(e) => updateBlock(idx, "from", e.target.value)}
+                        disabled={block.locked}
+                        className={`border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] ${
+                          block.locked ? "cursor-not-allowed" : ""
+                        }`}
+                      />
+                      <span className="text-white/50">to</span>
+                      <input
+                        type="time"
+                        value={block.to}
+                        onChange={(e) => updateBlock(idx, "to", e.target.value)}
+                        disabled={block.locked}
+                        className={`border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] ${
+                          block.locked ? "cursor-not-allowed" : ""
+                        }`}
+                      />
+                      {block.locked ? (
+                        <span className="text-yellow-400 text-xs">🔒</span>
+                      ) : (
+                        <button
+                          onClick={() => removeBlock(idx)}
+                          className="text-red-400 hover:text-red-300 text-lg px-2"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={addBlock}
+                    className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm"
+                  >
+                    + Add Block
+                  </button>
+                  <button
+                    onClick={saveBlocks}
+                    disabled={savingBlocks}
+                    className="px-3 py-1.5 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm disabled:opacity-50"
+                  >
+                    {savingBlocks ? "Saving..." : "Save Hours"}
+                  </button>
+                  <button
+                    onClick={() => setEditingBlocks(false)}
+                    className="px-3 py-1.5 bg-white/5 border border-white/20 text-white/60 rounded-lg hover:bg-white/10 text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Hour-wise table */}
+            {hours.length === 0 ? (
+              <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-16 text-center shadow-xl">
+                <p className="text-white/40 text-sm">No working hours found for this date</p>
+              </div>
+            ) : (
+              <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden mb-4 sm:mb-6 shadow-xl">
+                <div className="overflow-x-auto scroll-thin">
+                  <table className="w-full text-sm min-w-[700px]">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
+                        <th className="px-4 py-3 text-left font-semibold text-white w-[50px]">#</th>
+                        <th className="px-4 py-3 text-left font-semibold text-white w-[130px]">
+                          Time Slot
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">
+                          Project
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">
+                          Task
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-white w-[140px]">
+                          Stage
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-white">
+                          Task Description
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hours.map((hour, idx) => {
+                        const assignedProject = assignments.find((a) => a.id === hour.projectId);
+                        const assignedTasks = assignedProject?.tasks || [];
+                        const assignedTask = assignedTasks.find((t) => t.id === hour.projectTaskId);
+                        const assignedBuckets = assignedTask?.buckets || [];
+                        const unassignedProject = projects.find(
+                          (p) => p.name.toLowerCase() === "unassigned"
+                        );
+                        const isUnassigned = hour.projectId === unassignedProject?.id;
+
                         return (
-                          <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
-                            <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs font-medium">{t.employee_name}</td>
-                            <td className="px-4 py-2 text-white/70 border-t border-white/10 text-xs">{formatDateShort(dateStr)}</td>
-                            <td className="px-4 py-2 text-[#4fc3f7] font-medium border-t border-white/10 text-xs">
-                              {fromIst && toIst ? `${fromIst} – ${toIst}` : "—"}
+                          <tr
+                            key={idx}
+                            className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}
+                          >
+                            <td className="px-4 py-3 font-medium text-white/60 border-t border-white/10">
+                              {idx + 1}
                             </td>
-                            <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs">{t.project_name || "—"}</td>
-                            <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs">{t.task_description}</td>
-                            <td className="px-4 py-2 border-t border-white/10">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                t.status === "submitted"
-                                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                                  : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                              }`}>
-                                {t.status}
-                              </span>
+                            <td className="px-4 py-3 text-[#4fc3f7] font-medium border-t border-white/10 whitespace-nowrap">
+                              {hour.from} – {hour.to}
+                            </td>
+                            <td className="px-4 py-3 border-t border-white/10">
+                              {!isEditable || hour.saved ? (
+                                <span className="text-white/70 text-xs">
+                                  {assignments.find((a) => a.id === hour.projectId)?.name ||
+                                    projects.find((p) => p.id === hour.projectId)?.name ||
+                                    "—"}
+                                </span>
+                              ) : (
+                                <select
+                                  value={hour.projectId || ""}
+                                  onChange={(e) =>
+                                    updateProject(
+                                      idx,
+                                      e.target.value ? Number(e.target.value) : null
+                                    )
+                                  }
+                                  className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                                >
+                                  <option value="" className="bg-[#1e293b]">
+                                    Select
+                                  </option>
+                                  {unassignedProject && (
+                                    <option
+                                      key={unassignedProject.id}
+                                      value={unassignedProject.id}
+                                      className="bg-[#1e293b]"
+                                    >
+                                      Unassigned
+                                    </option>
+                                  )}
+                                  {assignments
+                                    .filter((a) => a.id !== unassignedProject?.id)
+                                    .map((a) => (
+                                      <option key={a.id} value={a.id} className="bg-[#1e293b]">
+                                        {a.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 border-t border-white/10">
+                              {!isEditable || hour.saved ? (
+                                <span className="text-white/70 text-xs">
+                                  {assignedTasks.find((t) => t.id === hour.projectTaskId)?.name ||
+                                    "—"}
+                                </span>
+                              ) : (
+                                <select
+                                  value={hour.projectTaskId || ""}
+                                  onChange={(e) =>
+                                    updateProjectTask(
+                                      idx,
+                                      e.target.value ? Number(e.target.value) : null
+                                    )
+                                  }
+                                  disabled={!hour.projectId || isUnassigned}
+                                  className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
+                                >
+                                  <option value="" className="bg-[#1e293b]">
+                                    Select
+                                  </option>
+                                  {assignedTasks.map((t) => (
+                                    <option key={t.id} value={t.id} className="bg-[#1e293b]">
+                                      {t.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 border-t border-white/10">
+                              {!isEditable || hour.saved ? (
+                                <span className="text-white/70 text-xs">
+                                  {assignedBuckets.find((b) => b.id === hour.bucketId)?.name ||
+                                    "—"}
+                                </span>
+                              ) : (
+                                <select
+                                  value={hour.bucketId || ""}
+                                  onChange={(e) =>
+                                    updateBucket(
+                                      idx,
+                                      e.target.value ? Number(e.target.value) : null
+                                    )
+                                  }
+                                  disabled={!hour.projectTaskId || isUnassigned}
+                                  className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
+                                >
+                                  <option value="" className="bg-[#1e293b]">
+                                    Select
+                                  </option>
+                                  {assignedBuckets.map((b) => (
+                                    <option key={b.id} value={b.id} className="bg-[#1e293b]">
+                                      {b.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 border-t border-white/10">
+                              {!isEditable || hour.saved ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white/70">{hour.taskDescription}</span>
+                                  {hour.saved &&
+                                    isDateEditable(selectedDate) &&
+                                    !submitted && <span className="text-yellow-400 text-xs">🔒</span>}
+                                </div>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={hour.taskDescription}
+                                  onChange={(e) => updateTask(idx, e.target.value)}
+                                  placeholder="What did you work on?"
+                                  className="w-full border border-white/30 rounded-lg px-3 py-1.5 bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                                />
+                              )}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
-                    <tfoot>
-                      <tr className="bg-white/10 border-t-2 border-white/20">
-                        <td colSpan={2} className="px-4 py-3 text-white font-semibold text-sm">Total Hours</td>
-                        <td colSpan={4} className="px-4 py-3 text-[#4fc3f7] font-bold text-sm">
-                          {(() => {
-                            const totalMinutes = filtered.reduce((sum: number, t: any) => {
-                              const fromIst = t.from_time_ist || "";
-                              const toIst = t.to_time_ist || "";
-                              if (!fromIst || !toIst) return sum;
-                              const [fh, fm] = fromIst.split(":").map(Number);
-                              const [th, tm] = toIst.split(":").map(Number);
-                              let diff = (th * 60 + tm) - (fh * 60 + fm);
-                              if (diff < 0) diff += 1440; // handle overnight
-                              return sum + diff;
-                            }, 0);
-                            const hrs = Math.floor(totalMinutes / 60);
-                            const mins = totalMinutes % 60;
-                            return mins > 0 ? `${hrs} hrs ${mins} mins` : `${hrs} hrs`;
-                          })()}
-                        </td>
-                      </tr>
-                    </tfoot>
-                    </>
-                    )}
                   </table>
                 </div>
-              );
-            })()}
-          </>
-        ) : (
-          <>
-        {/* Date picker + status */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 shadow-lg flex flex-wrap items-end gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wide">Date</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
-            />
-          </div>
-          {submitted && (
-            <span className="px-3 py-2 bg-green-500/20 text-green-400 rounded-lg text-sm font-medium border border-green-500/30">
-              ✓ Submitted
-            </span>
-          )}
-          {status === "draft" && !submitted && (
-            <span className="px-3 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm font-medium border border-yellow-500/30">
-              Draft Saved
-            </span>
-          )}
-          {isEditable && !editingBlocks && (
-            <button
-              onClick={startEditBlocks}
-              className="px-3 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all"
-            >
-              Edit Hours
-            </button>
-          )}
-          <div className="ml-auto text-lg font-semibold text-[#4fc3f7]">
-            Total: {(() => {
-              const totalMinutes = hours.reduce((sum, h) => {
-                if (!h.from || !h.to) return sum;
-                const [fh, fm] = h.from.split(":").map(Number);
-                const [th, tm] = h.to.split(":").map(Number);
-                let diff = (th * 60 + tm) - (fh * 60 + fm);
-                if (diff < 0) diff += 1440;
-                return sum + diff;
-              }, 0);
-              const hrs = Math.floor(totalMinutes / 60);
-              const mins = totalMinutes % 60;
-              return mins > 0 ? `${hrs} hrs ${mins} mins` : `${hrs} hrs`;
-            })()}
-          </div>
-        </div>
-
-        {/* Edit Blocks Panel */}
-        {editingBlocks && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 shadow-lg">
-            <h3 className="text-white font-semibold mb-3">Edit Working Hours</h3>
-            {status === "draft" && (
-              <p className="text-yellow-400/80 text-xs mb-3">Hours with saved tasks are locked and cannot be changed.</p>
+              </div>
             )}
-            <div className="space-y-2 mb-4">
-              {blocks.map((block, idx) => (
-                <div key={idx} className={`flex items-center gap-3 ${block.locked ? "opacity-50" : ""}`}>
-                  <input
-                    type="time"
-                    value={block.from}
-                    onChange={(e) => updateBlock(idx, "from", e.target.value)}
-                    disabled={block.locked}
-                    className={`border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] ${block.locked ? "cursor-not-allowed" : ""}`}
-                  />
-                  <span className="text-white/50">to</span>
-                  <input
-                    type="time"
-                    value={block.to}
-                    onChange={(e) => updateBlock(idx, "to", e.target.value)}
-                    disabled={block.locked}
-                    className={`border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] ${block.locked ? "cursor-not-allowed" : ""}`}
-                  />
-                  {block.locked ? (
-                    <span className="text-yellow-400 text-xs">🔒</span>
-                  ) : (
-                    <button onClick={() => removeBlock(idx)} className="text-red-400 hover:text-red-300 text-lg px-2">✕</button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={addBlock}
-                className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm"
-              >
-                + Add Block
-              </button>
-              <button
-                onClick={saveBlocks}
-                disabled={savingBlocks}
-                className="px-3 py-1.5 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm disabled:opacity-50"
-              >
-                {savingBlocks ? "Saving..." : "Save Hours"}
-              </button>
-              <button
-                onClick={() => setEditingBlocks(false)}
-                className="px-3 py-1.5 bg-white/5 border border-white/20 text-white/60 rounded-lg hover:bg-white/10 text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* Hour-wise table */}
-        {hours.length === 0 ? (
-          <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-16 text-center shadow-xl">
-            <p className="text-white/40 text-sm">No working hours found for this date</p>
-          </div>
-        ) : (
-          <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden mb-6 shadow-xl">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[50px]">#</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[130px]">Time Slot</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">Project</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">Task</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white w-[140px]">Stage</th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">Task Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hours.map((hour, idx) => {
-                  // Get assigned tasks for the selected project
-                  const assignedProject = assignments.find((a) => a.id === hour.projectId);
-                  const assignedTasks = assignedProject?.tasks || [];
-                  // Get assigned buckets for the selected task
-                  const assignedTask = assignedTasks.find((t) => t.id === hour.projectTaskId);
-                  const assignedBuckets = assignedTask?.buckets || [];
-                  // Check if selected project is "Unassigned"
-                  const unassignedProject = projects.find((p) => p.name.toLowerCase() === "unassigned");
-                  const isUnassigned = hour.projectId === unassignedProject?.id;
-
-                  return (
-                  <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
-                    <td className="px-4 py-3 font-medium text-white/60 border-t border-white/10">{idx + 1}</td>
-                    <td className="px-4 py-3 text-[#4fc3f7] font-medium border-t border-white/10">
-                      {hour.from} – {hour.to}
-                    </td>
-                    <td className="px-4 py-3 border-t border-white/10">
-                      {!isEditable || hour.saved ? (
-                        <span className="text-white/70 text-xs">
-                          {assignments.find((a) => a.id === hour.projectId)?.name || projects.find((p) => p.id === hour.projectId)?.name || "—"}
-                        </span>
-                      ) : (
-                        <select
-                          value={hour.projectId || ""}
-                          onChange={(e) => updateProject(idx, e.target.value ? Number(e.target.value) : null)}
-                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
-                        >
-                          <option value="" className="bg-[#1e293b]">Select</option>
-                          {unassignedProject && (
-                            <option key={unassignedProject.id} value={unassignedProject.id} className="bg-[#1e293b]">Unassigned</option>
-                          )}
-                          {assignments.filter((a) => a.id !== unassignedProject?.id).map((a) => (
-                            <option key={a.id} value={a.id} className="bg-[#1e293b]">{a.name}</option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 border-t border-white/10">
-                      {!isEditable || hour.saved ? (
-                        <span className="text-white/70 text-xs">
-                          {assignedTasks.find((t) => t.id === hour.projectTaskId)?.name || "—"}
-                        </span>
-                      ) : (
-                        <select
-                          value={hour.projectTaskId || ""}
-                          onChange={(e) => updateProjectTask(idx, e.target.value ? Number(e.target.value) : null)}
-                          disabled={!hour.projectId || isUnassigned}
-                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
-                        >
-                          <option value="" className="bg-[#1e293b]">Select</option>
-                          {assignedTasks.map((t) => (
-                            <option key={t.id} value={t.id} className="bg-[#1e293b]">{t.name}</option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 border-t border-white/10">
-                      {!isEditable || hour.saved ? (
-                        <span className="text-white/70 text-xs">
-                          {assignedBuckets.find((b) => b.id === hour.bucketId)?.name || "—"}
-                        </span>
-                      ) : (
-                        <select
-                          value={hour.bucketId || ""}
-                          onChange={(e) => updateBucket(idx, e.target.value ? Number(e.target.value) : null)}
-                          disabled={!hour.projectTaskId || isUnassigned}
-                          className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
-                        >
-                          <option value="" className="bg-[#1e293b]">Select</option>
-                          {assignedBuckets.map((b) => (
-                            <option key={b.id} value={b.id} className="bg-[#1e293b]">{b.name}</option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 border-t border-white/10">
-                      {!isEditable || hour.saved ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/70">{hour.taskDescription}</span>
-                          {hour.saved && isDateEditable(selectedDate) && !submitted && <span className="text-yellow-400 text-xs">🔒</span>}
-                        </div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={hour.taskDescription}
-                          onChange={(e) => updateTask(idx, e.target.value)}
-                          placeholder="What did you work on?"
-                          className="w-full border border-white/30 rounded-lg px-3 py-1.5 bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
-                        />
-                      )}
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Save & Submit buttons */}
-        {isEditable && hours.length > 0 && (
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saving || submitting}
-              className="px-6 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 font-medium transition-all disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Submit Task"}
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={submitting || saving}
-              className="px-6 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] font-medium transition-all shadow-md disabled:opacity-50"
-            >
-              {submitting ? "Submitting..." : "Submit for Today"}
-            </button>
-          </div>
-        )}
+            {/* Save & Submit buttons */}
+            {isEditable && hours.length > 0 && (
+              <div className="flex flex-wrap justify-end gap-3">
+                <button
+                  onClick={handleSave}
+                  disabled={saving || submitting}
+                  className="px-6 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 font-medium transition-all disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Submit Task"}
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting || saving}
+                  className="px-6 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] font-medium transition-all shadow-md disabled:opacity-50"
+                >
+                  {submitting ? "Submitting..." : "Submit for Today"}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

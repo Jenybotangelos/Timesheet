@@ -68,7 +68,11 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
       if (Array.isArray(boardData)) {
         for (const t of boardData) {
           if (!projMap.has(t.projectId)) {
-            projMap.set(t.projectId, { projectId: t.projectId, projectName: t.projectName, taskCount: 0 });
+            projMap.set(t.projectId, {
+              projectId: t.projectId,
+              projectName: t.projectName,
+              taskCount: 0,
+            });
           }
           projMap.get(t.projectId)!.taskCount++;
         }
@@ -82,10 +86,14 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
         setAllProjects(projData.map((p: any) => ({ id: p.id, name: p.name })));
       }
       if (Array.isArray(reqData)) {
-        setRequests(reqData.map((r: any) => ({
-          ...r,
-          project_name: r.project_id ? projLookup.get(r.project_id) || `Project #${r.project_id}` : null,
-        })));
+        setRequests(
+          reqData.map((r: any) => ({
+            ...r,
+            project_name: r.project_id
+              ? projLookup.get(r.project_id) || `Project #${r.project_id}`
+              : null,
+          }))
+        );
       }
     } catch (err) {
       console.error("Failed to fetch data:", err);
@@ -107,7 +115,10 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
   }
 
   async function handleSubmit() {
-    if (!name.trim()) { alert("Name is required"); return; }
+    if (!name.trim()) {
+      alert("Name is required");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -147,31 +158,31 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#16213e] to-[#0f3460]">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-6 py-4">
+      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">← Back</button>
+          <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">
+            ← Back
+          </button>
           <div className="flex bg-white/10 rounded-lg border border-white/20 p-0.5">
             <button
               onClick={() => navigate("/my-tasks")}
-              className="px-4 py-1.5 rounded-md text-sm font-medium transition-all text-white/40 hover:text-white/70 hover:bg-white/10"
+              className="px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all text-white/40 hover:text-white/70 hover:bg-white/10"
             >
               My Tasks
             </button>
-            <button
-              className="px-4 py-1.5 rounded-md text-sm font-medium transition-all bg-[#4fc3f7]/20 text-[#4fc3f7] border border-[#4fc3f7]/50"
-            >
+            <button className="px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all bg-[#4fc3f7]/20 text-[#4fc3f7] border border-[#4fc3f7]/50">
               Add Project
             </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
         {/* Tabs */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
           <button
             onClick={() => setTab("assigned")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+            className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium border transition-all ${
               tab === "assigned"
                 ? "bg-[#4fc3f7]/20 text-[#4fc3f7] border-[#4fc3f7]/50"
                 : "bg-white/5 text-white/40 border-white/15 hover:bg-white/10"
@@ -181,7 +192,7 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
           </button>
           <button
             onClick={() => setTab("requests")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+            className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium border transition-all ${
               tab === "requests"
                 ? "bg-[#4fc3f7]/20 text-[#4fc3f7] border-[#4fc3f7]/50"
                 : "bg-white/5 text-white/40 border-white/15 hover:bg-white/10"
@@ -192,7 +203,7 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex justify-end gap-3 mb-6">
+        <div className="flex justify-end gap-3 mb-4 sm:mb-6">
           <button
             onClick={() => navigate("/my-projects/edit")}
             className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm font-medium transition-all shadow-md"
@@ -213,16 +224,24 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
                 {assignedProjects.map((p) => (
                   <div
                     key={p.projectId}
-                    className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-5 shadow-xl transition-all"
+                    className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-4 sm:p-5 shadow-xl transition-all"
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-white font-semibold text-lg">{p.projectName}</h3>
-                        <p className="text-white/40 text-sm mt-1">{p.taskCount} task{p.taskCount !== 1 ? "s" : ""} assigned to you</p>
+                        <h3 className="text-white font-semibold text-base sm:text-lg">{p.projectName}</h3>
+                        <p className="text-white/40 text-sm mt-1">
+                          {p.taskCount} task{p.taskCount !== 1 ? "s" : ""} assigned to you
+                        </p>
                       </div>
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => navigate(`/my-projects/edit?id=${p.projectId}&name=${encodeURIComponent(p.projectName)}`)}
+                          onClick={() =>
+                            navigate(
+                              `/my-projects/edit?id=${p.projectId}&name=${encodeURIComponent(
+                                p.projectName
+                              )}`
+                            )
+                          }
                           className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-xs font-medium transition-all"
                         >
                           Edit
@@ -244,23 +263,27 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
           <>
             {requests.length === 0 ? (
               <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-16 text-center shadow-xl">
-                <p className="text-white/40 text-sm">No requests yet. Use the buttons above to request a new project or task.</p>
+                <p className="text-white/40 text-sm">
+                  No requests yet. Use the button above to request a new project or task.
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
                 {requests.map((r) => (
                   <div
                     key={r.id}
-                    className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-5 shadow-xl"
+                    className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-4 sm:p-5 shadow-xl"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                            r.type === "project"
-                              ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
-                              : "bg-cyan-500/20 text-cyan-400 border-cyan-500/30"
-                          }`}>
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium border ${
+                              r.type === "project"
+                                ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
+                                : "bg-cyan-500/20 text-cyan-400 border-cyan-500/30"
+                            }`}
+                          >
                             {r.type === "project" ? "Project" : "Task"}
                           </span>
                           <h3 className="text-white font-semibold">{r.name}</h3>
@@ -275,7 +298,11 @@ export default function MyProjects({ userEmail }: { userEmail: string }) {
                           Submitted {new Date(r.created_at).toLocaleDateString()}
                         </p>
                       </div>
-                      <span className={`px-3 py-1 rounded-lg text-xs font-medium border shrink-0 ${STATUS_BADGE[r.status] || STATUS_BADGE.pending}`}>
+                      <span
+                        className={`px-3 py-1 rounded-lg text-xs font-medium border shrink-0 ${
+                          STATUS_BADGE[r.status] || STATUS_BADGE.pending
+                        }`}
+                      >
                         {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
                       </span>
                     </div>

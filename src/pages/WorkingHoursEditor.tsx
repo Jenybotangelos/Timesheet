@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 const API_BASE = "/api";
 
-// Hardcoded for now — will come from login later
 interface Block {
   id?: number;
   from: string;
@@ -25,13 +24,11 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
   const [dirty, setDirty] = useState(false);
   const [overrideDate, setOverrideDate] = useState(() => {
     const now = new Date();
-    // Get IST date (UTC+5:30)
-    const istOffset = now.getTime() + (330 * 60 * 1000);
+    const istOffset = now.getTime() + 330 * 60 * 1000;
     const istDate = new Date(istOffset);
     return istDate.toISOString().split("T")[0];
   });
 
-  // Fetch blocks based on tab
   useEffect(() => {
     fetchBlocks();
   }, [tab, overrideDate]);
@@ -89,9 +86,6 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
     navigate("/");
   }
 
-
-
-  // Check if a block overlaps with any other block
   function hasOverlap(blockList: Block[]): string | null {
     for (let i = 0; i < blockList.length; i++) {
       const a = blockList[i];
@@ -115,7 +109,6 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
     return null;
   }
 
-  // Check for duplicate hour slots when blocks are expanded into hours
   function hasDuplicateHours(blockList: Block[]): string | null {
     const hourSet = new Set<string>();
     for (const block of blockList) {
@@ -136,21 +129,18 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
   }
 
   async function save() {
-    // Validate no overlapping blocks
     const overlap = hasOverlap(blocks);
     if (overlap) {
       alert("Overlap detected: " + overlap);
       return;
     }
 
-    // Validate no duplicate hour slots
     const duplicate = hasDuplicateHours(blocks);
     if (duplicate) {
       alert("Duplicate detected: " + duplicate);
       return;
     }
 
-    // Validate no 00:00 to 00:00 blocks
     const emptyBlock = blocks.find((b) => b.from === "00:00" && b.to === "00:00");
     if (emptyBlock) {
       alert("Please set a valid time for all blocks before saving.");
@@ -193,21 +183,12 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
 
       if (res.ok) {
         const result = await res.json();
-        if (tab === "override") {
-          const parts = [];
-          if (result.inserted) parts.push(`${result.inserted} added`);
-          if (result.updated) parts.push(`${result.updated} updated`);
-          if (result.deleted) parts.push(`${result.deleted} removed`);
-          alert(parts.length > 0 ? `Saved! (${parts.join(", ")})` : "No changes needed");
-        } else {
-          const parts = [];
-          if (result.inserted) parts.push(`${result.inserted} added`);
-          if (result.updated) parts.push(`${result.updated} updated`);
-          if (result.deleted) parts.push(`${result.deleted} removed`);
-          alert(parts.length > 0 ? `Saved! (${parts.join(", ")})` : "No changes needed");
-        }
+        const parts = [];
+        if (result.inserted) parts.push(`${result.inserted} added`);
+        if (result.updated) parts.push(`${result.updated} updated`);
+        if (result.deleted) parts.push(`${result.deleted} removed`);
+        alert(parts.length > 0 ? `Saved! (${parts.join(", ")})` : "No changes needed");
         setDirty(false);
-        // Refetch to get updated IDs
         await fetchBlocks();
       } else {
         const err = await res.json();
@@ -221,10 +202,7 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
     }
   }
 
-  const totalHours = blocks.reduce(
-    (sum, b) => sum + getHoursBetween(b.from, b.to),
-    0
-  );
+  const totalHours = blocks.reduce((sum, b) => sum + getHoursBetween(b.from, b.to), 0);
 
   if (loading) {
     return (
@@ -237,28 +215,25 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#16213e] to-[#0f3460]">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-6 py-4">
+      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <button
-            onClick={handleNavigateBack}
-            className="text-[#4fc3f7] hover:text-white transition-colors"
-          >
+          <button onClick={handleNavigateBack} className="text-[#4fc3f7] hover:text-white transition-colors">
             ← Back
           </button>
-          <h1 className="text-xl font-semibold text-white">Working Hours Editor</h1>
+          <h1 className="text-lg sm:text-xl font-semibold text-white">Working Hours Editor</h1>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 pb-24">
         {/* Tabs + Date Picker */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-5 mb-6 shadow-lg flex flex-wrap items-end gap-4">
+        <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-4 sm:p-5 mb-4 sm:mb-6 shadow-lg flex flex-wrap items-end gap-4">
           {/* Tabs */}
-          <div className="flex gap-1 bg-white/5 rounded-lg p-1">
+          <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-full sm:w-auto">
             <button
               onClick={() => setTab("default")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 tab === "default"
-                  ? "bg-[#4fc3f7] text-[#0f3460] shadow-md"
+                  ? "bg-[#4fc3f7] text-[#0f3460] shadow-md font-semibold"
                   : "text-white/60 hover:text-white hover:bg-white/10"
               }`}
             >
@@ -266,9 +241,9 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
             </button>
             <button
               onClick={() => setTab("override")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 tab === "override"
-                  ? "bg-[#4fc3f7] text-[#0f3460] shadow-md"
+                  ? "bg-[#4fc3f7] text-[#0f3460] shadow-md font-semibold"
                   : "text-white/60 hover:text-white hover:bg-white/10"
               }`}
             >
@@ -278,7 +253,7 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
 
           {/* Date picker for override */}
           {tab === "override" && (
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wide">
                 Override Date
               </label>
@@ -286,82 +261,83 @@ export default function WorkingHoursEditor({ userEmail }: { userEmail: string })
                 type="date"
                 value={overrideDate}
                 onChange={(e) => setOverrideDate(e.target.value)}
-                className="border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                className="w-full sm:w-auto border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
               />
             </div>
           )}
         </div>
+
         {/* Block Table */}
-        <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden mb-6 shadow-xl">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
-                <th className="px-4 py-3 text-left font-semibold text-white">Block</th>
-                <th className="px-4 py-3 text-left font-semibold text-white">From</th>
-                <th className="px-4 py-3 text-left font-semibold text-white">To</th>
-                <th className="px-4 py-3 text-left font-semibold text-white">Duration</th>
-                <th className="px-4 py-3 text-center font-semibold text-white">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {blocks.map((block, idx) => (
-                <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
-                  <td className="px-4 py-3 font-medium text-white/80 border-t border-white/10">Block {idx + 1}</td>
-                  <td className="px-4 py-3 border-t border-white/10">
-                    <input
-                      type="time"
-                      value={block.from}
-                      onChange={(e) =>
-                        updateBlock(idx, "from", e.target.value)
-                      }
-                      className="border border-white/30 rounded-lg px-2 py-1 bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] w-28"
-                    />
-                  </td>
-                  <td className="px-4 py-3 border-t border-white/10">
-                    <input
-                      type="time"
-                      value={block.to}
-                      onChange={(e) =>
-                        updateBlock(idx, "to", e.target.value)
-                      }
-                      className="border border-white/30 rounded-lg px-2 py-1 bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] w-28"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-[#4fc3f7] font-medium border-t border-white/10">
-                    {getHoursBetween(block.from, block.to).toFixed(1)} hrs
-                  </td>
-                  <td className="px-4 py-3 text-center border-t border-white/10">
-                    <button
-                      onClick={() => removeBlock(idx)}
-                      className="text-red-400 hover:text-red-300 font-medium transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </td>
+        <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden mb-4 sm:mb-6 shadow-xl">
+          <div className="overflow-x-auto scroll-thin">
+            <table className="w-full text-sm min-w-[400px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
+                  <th className="px-4 py-3 text-left font-semibold text-white">Block</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">From</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">To</th>
+                  <th className="px-4 py-3 text-left font-semibold text-white">Duration</th>
+                  <th className="px-4 py-3 text-center font-semibold text-white">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {blocks.map((block, idx) => (
+                  <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
+                    <td className="px-4 py-3 font-medium text-white/80 border-t border-white/10 whitespace-nowrap">
+                      Block {idx + 1}
+                    </td>
+                    <td className="px-4 py-3 border-t border-white/10">
+                      <input
+                        type="time"
+                        value={block.from}
+                        onChange={(e) => updateBlock(idx, "from", e.target.value)}
+                        className="border border-white/30 rounded-lg px-2 py-1 bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] w-28"
+                      />
+                    </td>
+                    <td className="px-4 py-3 border-t border-white/10">
+                      <input
+                        type="time"
+                        value={block.to}
+                        onChange={(e) => updateBlock(idx, "to", e.target.value)}
+                        className="border border-white/30 rounded-lg px-2 py-1 bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] w-28"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-[#4fc3f7] font-medium border-t border-white/10 whitespace-nowrap">
+                      {getHoursBetween(block.from, block.to).toFixed(1)} hrs
+                    </td>
+                    <td className="px-4 py-3 text-center border-t border-white/10">
+                      <button
+                        onClick={() => removeBlock(idx)}
+                        className="text-red-400 hover:text-red-300 font-medium transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between">
-          <div className="flex gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
             <button
               onClick={addBlock}
-              className="px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 font-medium transition-all"
+              className="flex-1 sm:flex-none px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 font-medium transition-all"
             >
               + Add Block
             </button>
             <button
               onClick={save}
               disabled={saving}
-              className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] font-medium transition-all shadow-md disabled:opacity-50"
+              className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] font-medium transition-all shadow-md disabled:opacity-50"
             >
               {saving ? "Saving..." : tab === "default" ? "Save Default" : "Save Override"}
             </button>
           </div>
-          <div className="text-lg font-semibold text-[#4fc3f7]">
+          <div className="text-base sm:text-lg font-semibold text-[#4fc3f7] w-full sm:w-auto text-right">
             Total: {totalHours.toFixed(1)} hrs
           </div>
         </div>

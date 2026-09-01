@@ -70,11 +70,15 @@ export default function Projects({ userEmail }: { userEmail: string }) {
     setSaving(true);
     try {
       if (editingProject) {
-        // Update
         const res = await fetch(`${API_BASE}/projects/${editingProject.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: userEmail, name, description, is_active: editingProject.is_active }),
+          body: JSON.stringify({
+            email: userEmail,
+            name,
+            description,
+            is_active: editingProject.is_active,
+          }),
         });
         if (!res.ok) {
           const err = await res.json();
@@ -82,7 +86,6 @@ export default function Projects({ userEmail }: { userEmail: string }) {
           return;
         }
       } else {
-        // Create
         const res = await fetch(`${API_BASE}/projects`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -105,6 +108,8 @@ export default function Projects({ userEmail }: { userEmail: string }) {
   }
 
   async function handleToggleActive(project: Project) {
+    const action = project.is_active ? "deactivate" : "activate";
+    if (!confirm(`Are you sure you want to ${action} "${project.name}"?`)) return;
     try {
       const res = await fetch(`${API_BASE}/projects/${project.id}`, {
         method: "PUT",
@@ -123,15 +128,22 @@ export default function Projects({ userEmail }: { userEmail: string }) {
         alert("Error: " + err.error);
       }
     } catch (err) {
-      console.error("Failed to toggle project:", err);
+      console.error("Failed to update project status:", err);
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm("Are you sure you want to delete this project?")) return;
+  async function handleDelete(projectId: number) {
+    if (
+      !confirm(
+        "Are you sure you want to permanently delete this project? All associated tasks will also be deleted."
+      )
+    )
+      return;
     try {
-      const res = await fetch(`${API_BASE}/projects/${id}?email=${encodeURIComponent(userEmail)}`, {
+      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail }),
       });
       if (res.ok) {
         await fetchProjects();
@@ -155,43 +167,47 @@ export default function Projects({ userEmail }: { userEmail: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#16213e] to-[#0f3460]">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">← Back</button>
-          <h1 className="text-xl font-semibold text-white">Projects</h1>
-          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium border border-purple-500/30">Admin</span>
+      <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-4">
+        <div className="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">
+              ← Back
+            </button>
+            <h1 className="text-lg sm:text-xl font-semibold text-white">Projects</h1>
+            <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium border border-purple-500/30">
+              Admin
+            </span>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => navigate("/approvals")}
+              className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-xs sm:text-sm font-medium transition-all"
+            >
+              Approvals
+            </button>
+            <button
+              onClick={() => navigate("/projects/report")}
+              className="px-3 py-1.5 bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-lg hover:bg-purple-500/30 text-xs sm:text-sm font-medium transition-all"
+            >
+              Report
+            </button>
+            <button
+              onClick={openNewForm}
+              className="px-3 sm:px-4 py-1.5 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg hover:from-purple-400 hover:to-purple-600 text-xs sm:text-sm font-medium transition-all shadow-md"
+            >
+              + Add Project
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6">
-        {/* Add Project + Report + Approvals Buttons */}
-        <div className="flex justify-end gap-3 mb-6">
-          <button
-            onClick={() => navigate("/approvals")}
-            className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-700 text-white rounded-lg hover:from-yellow-400 hover:to-yellow-600 text-sm font-medium transition-all shadow-md"
-          >
-            Approvals
-          </button>
-          <button
-            onClick={() => navigate("/projects/report")}
-            className="px-4 py-2 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-sm font-medium transition-all"
-          >
-            Project Report
-          </button>
-          <button
-            onClick={openNewForm}
-            className="px-4 py-2 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-sm font-medium transition-all shadow-md"
-          >
-            + Add Project
-          </button>
-        </div>
-
-        {/* New/Edit Project Form */}
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
+        {/* Create/Edit Form Modal */}
         {showForm && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-6 mb-6 shadow-lg">
-            <h3 className="text-white font-semibold mb-4">
+          <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-4 sm:p-5 mb-4 sm:mb-6 shadow-lg">
+            <h2 className="text-white font-semibold text-lg mb-4">
               {editingProject ? "Edit Project" : "New Project"}
-            </h3>
+            </h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-white/70 mb-1 uppercase tracking-wide">
@@ -217,7 +233,7 @@ export default function Projects({ userEmail }: { userEmail: string }) {
                   className="w-full border border-white/30 rounded-lg px-3 py-2 text-sm bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] resize-none"
                 />
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <button
                   onClick={handleSave}
                   disabled={saving}
@@ -246,16 +262,22 @@ export default function Projects({ userEmail }: { userEmail: string }) {
             {projects.map((project) => (
               <div
                 key={project.id}
-                className={`bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-5 shadow-xl transition-all ${
+                className={`bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-4 sm:p-5 shadow-xl transition-all ${
                   !project.is_active ? "opacity-50" : ""
                 }`}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <h3
-                        onClick={() => navigate(`/projects/view?id=${project.id}&name=${encodeURIComponent(project.name)}`)}
-                        className="text-white font-semibold text-lg cursor-pointer hover:text-[#4fc3f7] transition-colors"
+                        onClick={() =>
+                          navigate(
+                            `/projects/view?id=${project.id}&name=${encodeURIComponent(
+                              project.name
+                            )}`
+                          )
+                        }
+                        className="text-white font-semibold text-base sm:text-lg cursor-pointer hover:text-[#4fc3f7] transition-colors"
                       >
                         {project.name}
                       </h3>
@@ -276,9 +298,15 @@ export default function Projects({ userEmail }: { userEmail: string }) {
                       Created by {project.created_by} · {new Date(project.created_at).toLocaleDateString()}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <button
-                      onClick={() => navigate(`/projects/edit?id=${project.id}&name=${encodeURIComponent(project.name)}`)}
+                      onClick={() =>
+                        navigate(
+                          `/projects/edit?id=${project.id}&name=${encodeURIComponent(
+                            project.name
+                          )}`
+                        )
+                      }
                       className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-xs font-medium transition-all"
                     >
                       Edit
@@ -304,9 +332,17 @@ export default function Projects({ userEmail }: { userEmail: string }) {
                 {/* Hours at bottom-right */}
                 <div className="flex justify-end mt-2">
                   <span className="text-white/70 text-xs font-medium">
-                    {Math.floor(project.total_expected_hr)}{project.total_expected_hr % 1 > 0 ? ` hr ${Math.round((project.total_expected_hr % 1) * 60)} min` : " hr"}
-                    {" "}<span className="text-white/40">-</span>{" "}
-                    <span className="text-[#4fc3f7]">{Math.floor(project.total_consumption_hr)}{project.total_consumption_hr % 1 > 0 ? ` hr ${Math.round((project.total_consumption_hr % 1) * 60)} min` : " hr"}</span>
+                    {Math.floor(project.total_expected_hr)}
+                    {project.total_expected_hr % 1 > 0
+                      ? ` hr ${Math.round((project.total_expected_hr % 1) * 60)} min`
+                      : " hr"}{" "}
+                    <span className="text-white/40">-</span>{" "}
+                    <span className="text-[#4fc3f7]">
+                      {Math.floor(project.total_consumption_hr)}
+                      {project.total_consumption_hr % 1 > 0
+                        ? ` hr ${Math.round((project.total_consumption_hr % 1) * 60)} min`
+                        : " hr"}
+                    </span>
                   </span>
                 </div>
               </div>
