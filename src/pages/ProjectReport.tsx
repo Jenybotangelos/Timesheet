@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import FilterHeader, { optionsFrom } from "../components/FilterHeader";
 
 const API_BASE = "/api";
 
@@ -15,9 +16,14 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
   const [reportData, setReportData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterProject, setFilterProject] = useState<number | null>(null);
-  const [filterEmployee, setFilterEmployee] = useState<string>("");
-  const [empDropdownOpen, setEmpDropdownOpen] = useState(false);
-  const [projDropdownOpen, setProjDropdownOpen] = useState(false);
+  const [filterEmployee, setFilterEmployee] = useState<string | null>(null);
+  const [filterTask, setFilterTask] = useState<number | null>(null);
+  const [filterStage, setFilterStage] = useState<string | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<"employee" | "project" | "task" | "stage" | null>(null);
+
+  function toggleDropdown(name: "employee" | "project" | "task" | "stage") {
+    setOpenDropdown((cur) => (cur === name ? null : name));
+  }
 
   useEffect(() => {
     Promise.all([
@@ -26,9 +32,10 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
       fetch(`${API_BASE}/employees`).then((r) => r.json()),
     ])
       .then(([projectsData, reportRows, emps]) => {
-        setProjects(projectsData.filter((p: any) => p.is_active));
-        setReportData(reportRows);
-        setEmployees(emps);
+        setProjects(Array.isArray(projectsData) ? projectsData.filter((p: any) => p.is_active) : []);
+        setReportData(Array.isArray(reportRows) ? reportRows : []);
+        setEmployees(Array.isArray(emps) ? emps : []);
+        if (!Array.isArray(reportRows)) console.error("Project report failed:", reportRows);
       })
       .catch((err) => console.error("Failed to fetch report:", err))
       .finally(() => setLoading(false));
@@ -36,24 +43,31 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
 
   // Close dropdowns on outside click
   useEffect(() => {
-    if (!empDropdownOpen && !projDropdownOpen) return;
+    if (!openDropdown) return;
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest("[data-dropdown]")) {
-        setEmpDropdownOpen(false);
-        setProjDropdownOpen(false);
-      }
+      if (!target.closest("[data-dropdown]")) setOpenDropdown(null);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [empDropdownOpen, projDropdownOpen]);
+  }, [openDropdown]);
 
-  let filtered = reportData;
-  if (filterProject) {
-    filtered = filtered.filter((r) => r.project_id === filterProject);
-  }
+  const employeeOptions = employees.map((e) => ({ value: e.email, label: e.name }));
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
+  // Task and stage choices narrow to the selected project
+  const projectRows = filterProject ? reportData.filter((r) => r.project_id === filterProject) : reportData;
+  const taskOptions = optionsFrom<number>(projectRows, (r) => r.project_task_id, (r) => r.project_task_name);
+  const stageOptions = optionsFrom<string>(projectRows, (r) => r.bucket_name, (r) => r.bucket_name);
+
+  let filtered = projectRows;
   if (filterEmployee) {
     filtered = filtered.filter((r) => r.employee_email === filterEmployee);
+  }
+  if (filterTask) {
+    filtered = filtered.filter((r) => r.project_task_id === filterTask);
+  }
+  if (filterStage) {
+    filtered = filtered.filter((r) => r.bucket_name === filterStage);
   }
 
   // Group by project for totals
@@ -117,127 +131,47 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
         ) : (
           <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden shadow-xl">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[650px]">
+              <table className="w-full text-sm min-w-[900px]">
                 <thead>
                   <tr className="bg-gradient-to-r from-purple-600 to-purple-500">
-                    {/* Employee - clickable header with dropdown */}
-                    <th className="text-left font-semibold text-white relative p-0 min-w-[140px]">
-                      <button
-                        type="button"
-                        data-dropdown
-                        onClick={() => {
-                          setEmpDropdownOpen(!empDropdownOpen);
-                          setProjDropdownOpen(false);
-                        }}
-                        className="w-full h-full px-4 py-3 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
-                      >
-                        Employee
-                        {filterEmployee && (
-                          <span className="bg-white/25 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium">
-                            1
-                          </span>
-                        )}
-                        <span className="text-white/60 text-xs">▾</span>
-                      </button>
-                      {empDropdownOpen && (
-                        <div
-                          data-dropdown
-                          className="absolute top-full left-2 mt-1 min-w-[200px] bg-[#1e293b] border border-white/20 rounded-xl shadow-2xl py-1 max-h-56 overflow-y-auto z-50"
-                        >
-                          {filterEmployee && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFilterEmployee("");
-                                setEmpDropdownOpen(false);
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-[11px] text-[#4fc3f7] hover:bg-white/10 border-b border-white/10"
-                            >
-                              Clear filter
-                            </button>
-                          )}
-                          {employees.map((emp) => (
-                            <button
-                              key={emp.email}
-                              type="button"
-                              onClick={() => {
-                                setFilterEmployee(emp.email);
-                                setEmpDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 transition-colors ${
-                                filterEmployee === emp.email
-                                  ? "text-[#4fc3f7] bg-white/5"
-                                  : "text-white/90"
-                              }`}
-                            >
-                              {emp.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </th>
+                    <FilterHeader
+                      label="Employee"
+                      options={employeeOptions}
+                      value={filterEmployee}
+                      onChange={(v) => { setFilterEmployee(v); setOpenDropdown(null); }}
+                      open={openDropdown === "employee"}
+                      onToggle={() => toggleDropdown("employee")}
+                    />
                     <th className="px-4 py-3 text-left font-semibold text-white whitespace-nowrap">
                       Date
                     </th>
                     <th className="px-4 py-3 text-left font-semibold text-white whitespace-nowrap">
                       Time
                     </th>
-                    {/* Project - clickable header with dropdown */}
-                    <th className="text-left font-semibold text-white relative p-0 min-w-[140px]">
-                      <button
-                        type="button"
-                        data-dropdown
-                        onClick={() => {
-                          setProjDropdownOpen(!projDropdownOpen);
-                          setEmpDropdownOpen(false);
-                        }}
-                        className="w-full h-full px-4 py-3 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
-                      >
-                        Project
-                        {filterProject && (
-                          <span className="bg-white/25 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium">
-                            1
-                          </span>
-                        )}
-                        <span className="text-white/60 text-xs">▾</span>
-                      </button>
-                      {projDropdownOpen && (
-                        <div
-                          data-dropdown
-                          className="absolute top-full left-2 mt-1 min-w-[200px] bg-[#1e293b] border border-white/20 rounded-xl shadow-2xl py-1 max-h-56 overflow-y-auto z-50"
-                        >
-                          {filterProject && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFilterProject(null);
-                                setProjDropdownOpen(false);
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-[11px] text-[#4fc3f7] hover:bg-white/10 border-b border-white/10"
-                            >
-                              Clear filter
-                            </button>
-                          )}
-                          {projects.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => {
-                                setFilterProject(p.id);
-                                setProjDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 transition-colors ${
-                                filterProject === p.id
-                                  ? "text-[#4fc3f7] bg-white/5"
-                                  : "text-white/90"
-                              }`}
-                            >
-                              {p.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </th>
+                    <FilterHeader
+                      label="Project"
+                      options={projectOptions}
+                      value={filterProject}
+                      onChange={(v) => { setFilterProject(v); setFilterTask(null); setOpenDropdown(null); }}
+                      open={openDropdown === "project"}
+                      onToggle={() => toggleDropdown("project")}
+                    />
+                    <FilterHeader
+                      label="Task"
+                      options={taskOptions}
+                      value={filterTask}
+                      onChange={(v) => { setFilterTask(v); setOpenDropdown(null); }}
+                      open={openDropdown === "task"}
+                      onToggle={() => toggleDropdown("task")}
+                    />
+                    <FilterHeader
+                      label="Stage"
+                      options={stageOptions}
+                      value={filterStage}
+                      onChange={(v) => { setFilterStage(v); setOpenDropdown(null); }}
+                      open={openDropdown === "stage"}
+                      onToggle={() => toggleDropdown("stage")}
+                    />
                     <th className="px-4 py-3 text-left font-semibold text-white">
                       Task Description
                     </th>
@@ -246,7 +180,7 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-white/40 text-sm">
+                      <td colSpan={7} className="px-4 py-12 text-center text-white/40 text-sm">
                         No entries found
                       </td>
                     </tr>
@@ -273,6 +207,12 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
                           <td className="px-4 py-2.5 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
                             {r.project_name || "—"}
                           </td>
+                          <td className="px-4 py-2.5 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
+                            {r.project_task_name || "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
+                            {r.bucket_name || "—"}
+                          </td>
                           <td className="px-4 py-2.5 text-white/80 border-t border-white/10 text-xs">
                             {r.task_description}
                           </td>
@@ -287,7 +227,7 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
                       <td colSpan={2} className="px-4 py-3 text-white font-semibold text-sm">
                         Grand Total
                       </td>
-                      <td colSpan={3} className="px-4 py-3 text-[#4fc3f7] font-bold text-sm">
+                      <td colSpan={5} className="px-4 py-3 text-[#4fc3f7] font-bold text-sm">
                         {Math.floor(grandTotalMin / 60)} hrs
                         {grandTotalMin % 60 > 0 ? ` ${grandTotalMin % 60} mins` : ""}
                       </td>

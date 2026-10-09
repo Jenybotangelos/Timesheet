@@ -60,6 +60,21 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "project_id is required for task requests" });
     }
 
+    // A new project needs at least one task, and every new task at least one stage
+    const hasStage = (s: any) => !!s && typeof s === "object" && Object.keys(s).length > 0;
+    if (type === "project") {
+      const tasks = Array.isArray(stages?.tasks) ? stages.tasks : [];
+      if (tasks.length === 0) {
+        return res.status(400).json({ error: "Add at least one task to the project" });
+      }
+      const noStage = tasks.filter((t: any) => !hasStage(t.stages)).map((t: any) => t.name);
+      if (noStage.length) {
+        return res.status(400).json({ error: `Select at least one stage for: ${noStage.join(", ")}` });
+      }
+    } else if (!hasStage(stages)) {
+      return res.status(400).json({ error: `Select at least one stage for: ${name}` });
+    }
+
     const pool = await getPool();
     await pool.request()
       .input("type", type)

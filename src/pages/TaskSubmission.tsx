@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import FilterHeader, { optionsFrom } from "../components/FilterHeader";
 
 const API_BASE = "/api";
 
@@ -28,6 +29,14 @@ interface Project {
   id: number;
   name: string;
   description: string;
+}
+
+// Each description may be used only once in a day
+const MAX_SAME_DESCRIPTION = 1;
+
+// Case, spacing and trailing punctuation don't make a description different
+function normalizeDescription(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").replace(/[.,!?;:\s]+$/, "").trim();
 }
 
 interface AssignmentBucket {
@@ -72,6 +81,8 @@ export default function TaskSubmission({
   const [savingBlocks, setSavingBlocks] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<AssignmentProject[]>([]);
+  // Set by the last Save/Submit attempt, so missing fields get highlighted
+  const [showErrors, setShowErrors] = useState<"save" | "submit" | null>(null);
 
   // Weekly report state (admin only)
   const [reportStartDate, setReportStartDate] = useState(() => {
@@ -93,23 +104,38 @@ export default function TaskSubmission({
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
   const [weeklyLoading, setWeeklyLoading] = useState(false);
   const [employees, setEmployees] = useState<{ id: number; name: string; email: string }[]>([]);
-  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
-  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
-  const [empDropdownOpen, setEmpDropdownOpen] = useState(false);
-  const [projDropdownOpen, setProjDropdownOpen] = useState(false);
+  const [reportEmployee, setReportEmployee] = useState<string | null>(null);
+  const [reportProject, setReportProject] = useState<number | null>(null);
+  const [reportTask, setReportTask] = useState<number | null>(null);
+  const [reportStage, setReportStage] = useState<string | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<"employee" | "project" | "task" | "stage" | null>(null);
+
+  function toggleDropdown(name: "employee" | "project" | "task" | "stage") {
+    setOpenDropdown((cur) => (cur === name ? null : name));
+  }
 
   useEffect(() => {
-    if (!empDropdownOpen && !projDropdownOpen) return;
+    if (!openDropdown) return;
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest("[data-dropdown]")) {
-        setEmpDropdownOpen(false);
-        setProjDropdownOpen(false);
-      }
+      if (!target.closest("[data-dropdown]")) setOpenDropdown(null);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [empDropdownOpen, projDropdownOpen]);
+  }, [openDropdown]);
+
+  // Weekly report filters; task and stage choices narrow to the selected project
+  const reportEmployeeOptions = employees.map((e) => ({ value: e.email, label: e.name }));
+  const reportProjectOptions = optionsFrom<number>(weeklyData, (r) => r.project_id, (r) => r.project_name);
+  const reportProjectRows = reportProject ? weeklyData.filter((r) => r.project_id === reportProject) : weeklyData;
+  const reportTaskOptions = optionsFrom<number>(reportProjectRows, (r) => r.project_task_id, (r) => r.project_task_name);
+  const reportStageOptions = optionsFrom<string>(reportProjectRows, (r) => r.bucket_name, (r) => r.bucket_name);
+  const filteredWeekly = reportProjectRows.filter(
+    (r) =>
+      (!reportEmployee || r.employee_email === reportEmployee) &&
+      (!reportTask || r.project_task_id === reportTask) &&
+      (!reportStage || r.bucket_name === reportStage)
+  );
 
   const submitted = status === "submitted";
   const isEditable = isDateEditable(selectedDate) && !submitted;
@@ -183,18 +209,6 @@ export default function TaskSubmission({
     }
   }, [reportStartDate, reportEndDate, viewMode]);
 
-  function toggleReportEmployee(email: string) {
-    setSelectedEmployees((prev) =>
-      prev.includes(email) ? prev.filter((x) => x !== email) : [...prev, email]
-    );
-  }
-
-  function toggleReportProject(id: number) {
-    setSelectedProjects((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  }
-
   function formatDateShort(dateStr: string): string {
     const d = new Date(dateStr + "T00:00:00");
     return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -204,6 +218,7 @@ export default function TaskSubmission({
     sessionStorage.setItem("tasksheet_selected_date", selectedDate);
     fetchHours();
     setEditingBlocks(false);
+    setShowErrors(null);
   }, [selectedDate]);
 
   function startEditBlocks() {
@@ -326,7 +341,57 @@ export default function TaskSubmission({
     setHours(hours.map((h, i) => (i === index ? { ...h, bucketId } : h)));
   }
 
+  // Per-row problems. Saved rows are locked, so only unsaved rows are checked for
+  // missing fields; "save" checks only rows being filled in, "submit" checks every row.
+  function getRowErrors(mode: "save" | "submit"): Map<number, string[]> {
+    const unassignedId = projects.find((p) => p.name.toLowerCase() === "unassigned")?.id;
+    const counts = new Map<string, number>();
+    hours.forEach((h) => {
+      const key = normalizeDescription(h.taskDescription);
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    const errors = new Map<number, string[]>();
+    hours.forEach((h, idx) => {
+      const rowErrors: string[] = [];
+      const touched = !!(h.taskDescription.trim() || h.projectId);
+      if (!h.saved && (mode === "submit" || touched)) {
+        const tasks = assignments.find((a) => a.id === h.projectId)?.tasks || [];
+        const buckets = tasks.find((t) => t.id === h.projectTaskId)?.buckets || [];
+        const isUnassigned = h.projectId !== null && h.projectId === unassignedId;
+        if (!h.projectId) rowErrors.push("project");
+        // Task/stage can only be required when there is something to pick
+        if (h.projectId && !isUnassigned && tasks.length > 0 && !h.projectTaskId) rowErrors.push("task");
+        if (h.projectTaskId && !isUnassigned && buckets.length > 0 && !h.bucketId) rowErrors.push("stage");
+        if (!h.taskDescription.trim()) rowErrors.push("description");
+      }
+      const key = normalizeDescription(h.taskDescription);
+      if (!h.saved && key && (counts.get(key) || 0) > MAX_SAME_DESCRIPTION) rowErrors.push("duplicate");
+      if (rowErrors.length) errors.set(idx, rowErrors);
+    });
+    return errors;
+  }
+
+  function validateHours(mode: "save" | "submit"): boolean {
+    const errors = getRowErrors(mode);
+    setShowErrors(mode);
+    if (errors.size === 0) return true;
+    const rows = (kind: string) =>
+      Array.from(errors).filter(([, e]) => e.includes(kind)).map(([i]) => i + 1);
+    const missing = ["project", "task", "stage", "description"]
+      .filter((k) => rows(k).length)
+      .map((k) => `• ${k[0].toUpperCase() + k.slice(1)} is required (row ${rows(k).join(", ")})`);
+    if (rows("duplicate").length) {
+      missing.push(
+        `• Each hour needs its own description. Rows ${rows("duplicate").join(", ")} have the same text — please describe them differently.`
+      );
+    }
+    alert("Please fix the following before continuing:\n\n" + missing.join("\n"));
+    return false;
+  }
+
   async function handleSave() {
+    if (!validateHours("save")) return;
     if (
       !confirm(
         "After saving, hours with task descriptions cannot have their time changed. Continue?"
@@ -371,11 +436,7 @@ export default function TaskSubmission({
   }
 
   async function handleSubmit() {
-    const emptyTask = hours.find((h) => !h.taskDescription.trim());
-    if (emptyTask) {
-      alert("Please fill in the task description for all hours before submitting.");
-      return;
-    }
+    if (!validateHours("submit")) return;
 
     if (!confirm("Once submitted, you cannot edit these tasks. Continue?")) return;
 
@@ -491,26 +552,56 @@ export default function TaskSubmission({
             ) : (
               <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden shadow-xl">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[600px]">
+                  <table className="w-full text-sm min-w-[900px]">
                     <thead>
                       <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
-                        <th className="px-4 py-3 text-left font-semibold text-white">Employee</th>
+                        <FilterHeader
+                          label="Employee"
+                          options={reportEmployeeOptions}
+                          value={reportEmployee}
+                          onChange={(v) => { setReportEmployee(v); setOpenDropdown(null); }}
+                          open={openDropdown === "employee"}
+                          onToggle={() => toggleDropdown("employee")}
+                        />
                         <th className="px-4 py-3 text-left font-semibold text-white">Date</th>
                         <th className="px-4 py-3 text-left font-semibold text-white">Time</th>
-                        <th className="px-4 py-3 text-left font-semibold text-white">Project</th>
+                        <FilterHeader
+                          label="Project"
+                          options={reportProjectOptions}
+                          value={reportProject}
+                          onChange={(v) => { setReportProject(v); setReportTask(null); setOpenDropdown(null); }}
+                          open={openDropdown === "project"}
+                          onToggle={() => toggleDropdown("project")}
+                        />
+                        <FilterHeader
+                          label="Task"
+                          options={reportTaskOptions}
+                          value={reportTask}
+                          onChange={(v) => { setReportTask(v); setOpenDropdown(null); }}
+                          open={openDropdown === "task"}
+                          onToggle={() => toggleDropdown("task")}
+                        />
+                        <FilterHeader
+                          label="Stage"
+                          options={reportStageOptions}
+                          value={reportStage}
+                          onChange={(v) => { setReportStage(v); setOpenDropdown(null); }}
+                          open={openDropdown === "stage"}
+                          onToggle={() => toggleDropdown("stage")}
+                        />
                         <th className="px-4 py-3 text-left font-semibold text-white">Task Description</th>
                         <th className="px-4 py-3 text-left font-semibold text-white w-[90px]">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {weeklyData.length === 0 ? (
+                      {filteredWeekly.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-16 text-center text-white/40 text-sm">
+                          <td colSpan={8} className="px-4 py-16 text-center text-white/40 text-sm">
                             No tasks found for this date range
                           </td>
                         </tr>
                       ) : (
-                        weeklyData.map((t: any, idx: number) => {
+                        filteredWeekly.map((t: any, idx: number) => {
                           const fromIst = t.from_time_ist || "";
                           const toIst = t.to_time_ist || "";
                           const dateStr =
@@ -530,6 +621,12 @@ export default function TaskSubmission({
                               </td>
                               <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
                                 {t.project_name || "—"}
+                              </td>
+                              <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
+                                {t.project_task_name || "—"}
+                              </td>
+                              <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
+                                {t.bucket_name || "—"}
                               </td>
                               <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs">
                                 {t.task_description}
@@ -693,21 +790,28 @@ export default function TaskSubmission({
                           Time Slot
                         </th>
                         <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">
-                          Project
+                          Project <span className="text-red-200">*</span>
                         </th>
                         <th className="px-4 py-3 text-left font-semibold text-white w-[150px]">
-                          Task
+                          Task <span className="text-red-200">*</span>
                         </th>
                         <th className="px-4 py-3 text-left font-semibold text-white w-[140px]">
-                          Stage
+                          Stage <span className="text-red-200">*</span>
                         </th>
                         <th className="px-4 py-3 text-left font-semibold text-white">
-                          Task Description
+                          Task Description <span className="text-red-200">*</span>
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {hours.map((hour, idx) => {
+                      {(() => {
+                        // Duplicates are flagged live; missing fields only after a Save/Submit attempt
+                        const rowErrors = getRowErrors(showErrors || "save");
+                        const has = (idx: number, kind: string) =>
+                          (kind === "duplicate" || showErrors !== null) && !!rowErrors.get(idx)?.includes(kind);
+                        const ring = (bad: boolean) =>
+                          bad ? "border-red-400 ring-1 ring-red-400" : "border-white/30";
+                        return hours.map((hour, idx) => {
                         const assignedProject = assignments.find((a) => a.id === hour.projectId);
                         const assignedTasks = assignedProject?.tasks || [];
                         const assignedTask = assignedTasks.find((t) => t.id === hour.projectTaskId);
@@ -744,7 +848,7 @@ export default function TaskSubmission({
                                       e.target.value ? Number(e.target.value) : null
                                     )
                                   }
-                                  className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
+                                  className={`w-full border ${ring(has(idx, "project"))} rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]`}
                                 >
                                   <option value="" className="bg-[#1e293b]">
                                     Select
@@ -784,7 +888,7 @@ export default function TaskSubmission({
                                     )
                                   }
                                   disabled={!hour.projectId || isUnassigned}
-                                  className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
+                                  className={`w-full border ${ring(has(idx, "task"))} rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40`}
                                 >
                                   <option value="" className="bg-[#1e293b]">
                                     Select
@@ -813,7 +917,7 @@ export default function TaskSubmission({
                                     )
                                   }
                                   disabled={!hour.projectTaskId || isUnassigned}
-                                  className="w-full border border-white/30 rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40"
+                                  className={`w-full border ${ring(has(idx, "stage"))} rounded-lg px-2 py-1.5 text-xs bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-[#4fc3f7] disabled:opacity-40`}
                                 >
                                   <option value="" className="bg-[#1e293b]">
                                     Select
@@ -835,18 +939,26 @@ export default function TaskSubmission({
                                     !submitted && <span className="text-yellow-400 text-xs">🔒</span>}
                                 </div>
                               ) : (
-                                <input
-                                  type="text"
-                                  value={hour.taskDescription}
-                                  onChange={(e) => updateTask(idx, e.target.value)}
-                                  placeholder="What did you work on?"
-                                  className="w-full border border-white/30 rounded-lg px-3 py-1.5 bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]"
-                                />
+                                <>
+                                  <input
+                                    type="text"
+                                    value={hour.taskDescription}
+                                    onChange={(e) => updateTask(idx, e.target.value)}
+                                    placeholder="What did you work on?"
+                                    className={`w-full border ${ring(has(idx, "description") || has(idx, "duplicate"))} rounded-lg px-3 py-1.5 bg-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#4fc3f7]`}
+                                  />
+                                  {has(idx, "duplicate") && (
+                                    <p className="text-red-400 text-[11px] mt-1">
+                                      This description is already used in another hour — please write something different
+                                    </p>
+                                  )}
+                                </>
                               )}
                             </td>
                           </tr>
                         );
-                      })}
+                      });
+                      })()}
                     </tbody>
                   </table>
                 </div>

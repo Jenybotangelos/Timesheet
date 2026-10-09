@@ -177,6 +177,28 @@ router.get("/:projectId/:taskId/details", async (req, res) => {
       buckets[key].acceptanceCriteria = buckets[key].acceptanceCriteria.size > 0
         ? Array.from(buckets[key].acceptanceCriteria)
         : [""];
+      buckets[key].loggedMinutes = 0;
+      buckets[key].loggedBy = [];
+    }
+
+    // Time employees have logged per stage, so the editor can warn before a stage is removed
+    const logged = await pool.request()
+      .input("taskId", parseInt(taskId))
+      .query(`
+        SELECT b.bucket_name, e.name AS employee_name,
+          SUM((DATEDIFF(minute, o.from_time_utc, o.to_time_utc) + 1440) % 1440) AS minutes
+        FROM timesheet_task_entries te
+        JOIN timesheet_task_buckets b ON b.id = te.bucket_id
+        JOIN timesheet_employees e ON e.email = te.employee_email
+        LEFT JOIN timesheet_date_overrides o ON o.id = te.override_id
+        WHERE b.task_id = @taskId
+        GROUP BY b.bucket_name, e.name
+      `);
+    for (const row of logged.recordset) {
+      const bucket = buckets[row.bucket_name];
+      if (!bucket) continue;
+      bucket.loggedMinutes += row.minutes || 0;
+      bucket.loggedBy.push(row.employee_name);
     }
 
     res.json(buckets);
@@ -346,6 +368,23 @@ router.post("/:projectId", async (req, res) => {
     }
 
     const pool = await getPool();
+
+    // Every new task needs at least one stage
+    const current = await pool.request()
+      .input("projectId", parseInt(projectId))
+      .query("SELECT id FROM timesheet_project_tasks WHERE project_id = @projectId");
+    const currentIds = new Set(current.recordset.map((r: any) => r.id.toString()));
+    const newWithoutStage = tasks
+      .filter((t: any) => !(t.id && currentIds.has(t.id.toString())))
+      .filter((t: any) => {
+        const names = [...(Array.isArray(t.selectedStages) ? t.selectedStages : []), ...Object.keys(t.buckets || {})];
+        return !names.some((b) => BUCKETS.includes(b));
+      })
+      .map((t: any) => t.name);
+    if (newWithoutStage.length) {
+      return res.status(400).json({ error: `Select at least one stage for: ${newWithoutStage.join(", ")}` });
+    }
+
     const transaction = pool.transaction();
     await transaction.begin();
 
@@ -385,8 +424,16 @@ router.post("/:projectId", async (req, res) => {
 
         savedTaskIds.push({ clientId: task.id, dbId: taskId });
 
-        // Upsert buckets: update existing, insert new, delete removed
-        const taskBucketNames = Object.keys(task.buckets || {}).filter((b) => BUCKETS.includes(b));
+        // Upsert buckets: update existing, insert new, delete removed.
+        // The editors only load a task's bucket data when it is expanded, so
+        // collapsed tasks arrive with selectedStages but empty buckets. Keep every
+        // stage named in selectedStages; only stages the user unticked are deleted,
+        // and only stages whose data was sent are updated (see the loop below).
+        const bucketDataNames = Object.keys(task.buckets || {});
+        const selectedNames: string[] = Array.isArray(task.selectedStages) ? task.selectedStages : [];
+        const taskBucketNames = Array.from(new Set([...selectedNames, ...bucketDataNames])).filter((b) =>
+          BUCKETS.includes(b)
+        );
 
         // Get existing buckets for this task
         const existingBuckets = await transaction.request()
@@ -401,9 +448,10 @@ router.post("/:projectId", async (req, res) => {
         // Delete buckets that are no longer selected
         for (const [existingName, existingId] of existingBucketMap) {
           if (!taskBucketNames.includes(existingName)) {
+            // Keep employees' logged hours; they just lose their stage
             await transaction.request()
               .input("delEntryBucket", existingId)
-              .query("DELETE FROM timesheet_task_entries WHERE bucket_id = @delEntryBucket");
+              .query("UPDATE timesheet_task_entries SET bucket_id = NULL WHERE bucket_id = @delEntryBucket");
             await transaction.request()
               .input("delBucketId1", existingId)
               .query("DELETE FROM timesheet_bucket_assignees WHERE bucket_id = @delBucketId1");

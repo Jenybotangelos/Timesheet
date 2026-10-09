@@ -4,6 +4,8 @@ import { getPool } from "../db";
 const router = Router();
 
 const MAIL_FROM = "Jeny.M.Jerry@botangelos.com";
+const PORTAL_URL = "https://timesheet-beta-umber.vercel.app";
+const PORTAL_LINK = `<a href="${PORTAL_URL}">${PORTAL_URL}</a>`;
 
 // Get access token using client credentials flow
 async function getGraphToken(): Promise<string> {
@@ -330,7 +332,7 @@ router.get("/remind-employees", async (req, res) => {
       const html = `
         <p>Hi ${emp.name},</p>
         <p>This is a reminder that you have <strong>not submitted</strong> your task sheet for <strong>${yesterdayStr}</strong>.</p>
-        <p>Please submit your tasks as soon as possible.</p>
+        <p>Please submit your tasks as soon as possible here: ${PORTAL_LINK}</p>
         <br/>
         <p>— Tasksheet System</p>
       `;
@@ -343,7 +345,7 @@ router.get("/remind-employees", async (req, res) => {
     if (delegatedToken) {
       for (const emp of nonSubmitters) {
         try {
-          const chatHtml = `<p>Hi <b>${emp.name}</b>,</p><p>⚠️ You have <b>not submitted</b> your task sheet for <b>${yesterdayStr}</b>.</p><p>Please submit your tasks as soon as possible.</p>`;
+          const chatHtml = `<p>Hi <b>${emp.name}</b>,</p><p>⚠️ You have <b>not submitted</b> your task sheet for <b>${yesterdayStr}</b>.</p><p>Please submit your tasks as soon as possible here: ${PORTAL_LINK}</p>`;
           await sendTeamsChat(delegatedToken, accessToken, emp.email, chatHtml);
           teamsChatResults.push(emp.email);
         } catch (chatErr: any) {
@@ -409,6 +411,7 @@ router.get("/notify-kokul", async (req, res) => {
         ${nonSubmitterNames.map((n: string) => `<li>${n}</li>`).join("")}
       </ul>
       <p>Total: ${nonSubmitters.length} employee(s) pending.</p>
+      <p>View the timesheet portal: ${PORTAL_LINK}</p>
       <br/>
       <p>— Tasksheet System</p>
     `;
@@ -418,7 +421,7 @@ router.get("/notify-kokul", async (req, res) => {
     try {
       const delegatedToken = await getDelegatedToken();
       if (delegatedToken) {
-        const chatHtml = `<p>Hi <b>Kokul</b>,</p><p>📋 <b>Task Submission Report - ${yesterdayStr}</b></p><p>Not submitted:</p><ul>${nonSubmitterNames.map((n: string) => `<li>${n}</li>`).join("")}</ul><p><b>Total: ${nonSubmitters.length} pending.</b></p>`;
+        const chatHtml = `<p>Hi <b>Kokul</b>,</p><p>📋 <b>Task Submission Report - ${yesterdayStr}</b></p><p>Not submitted:</p><ul>${nonSubmitterNames.map((n: string) => `<li>${n}</li>`).join("")}</ul><p><b>Total: ${nonSubmitters.length} pending.</b></p><p>View the timesheet portal: ${PORTAL_LINK}</p>`;
         await sendTeamsChat(delegatedToken, accessToken, kokulEmail, chatHtml);
       }
     } catch (teamsErr: any) {

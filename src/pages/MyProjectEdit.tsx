@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { confirmStageRemoval } from "../components/confirmStageRemoval";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 const API_BASE = "/api";
@@ -17,6 +18,9 @@ interface BucketData {
   acceptanceCriteria: string[];
   completed: boolean;
   inProgress: boolean;
+  // Sent by the server for saved stages; used to warn before removing one
+  loggedMinutes?: number;
+  loggedBy?: string[];
 }
 
 interface ExistingTaskItem {
@@ -132,6 +136,10 @@ export default function MyProjectEdit({ userEmail }: { userEmail: string }) {
   }
 
   function toggleExistingStage(taskId: string, stage: string) {
+    const current = existingTasks.find((t) => t.id === taskId);
+    if (current?.selectedStages.includes(stage) && !confirmStageRemoval(current.name, stage, current.buckets[stage])) {
+      return;
+    }
     setDirty(true);
     setExistingTasks((prev) => prev.map((t) => {
       if (t.id !== taskId) return t;
@@ -215,6 +223,12 @@ export default function MyProjectEdit({ userEmail }: { userEmail: string }) {
   }
 
   async function submitNewTasks() {
+    // A task with no stage has nobody assigned, so it never shows up for anyone
+    const noStage = newTasks.filter((t) => t.selectedStages.length === 0);
+    if (noStage.length) {
+      alert(`Select at least one stage for: ${noStage.map((t) => t.name).join(", ")}`);
+      return;
+    }
     if (isNewProject) {
       if (!projName.trim()) { alert("Project name is required"); return; }
       if (newTasks.length === 0) { alert("Add at least one task"); return; }

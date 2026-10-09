@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { confirmStageRemoval } from "../components/confirmStageRemoval";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 const BUCKETS = [
@@ -22,6 +23,9 @@ interface BucketData {
   acceptanceCriteria: string[];
   completed: boolean;
   inProgress: boolean;
+  // Sent by the server for saved stages; used to warn before removing one
+  loggedMinutes?: number;
+  loggedBy?: string[];
 }
 
 interface Task {
@@ -72,6 +76,8 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
   const projectId = searchParams.get("id") || "";
 
   const [tasks, setTasks] = useState<Task[]>([]);
+  // IDs of tasks already saved in the database; anything else is a new task
+  const [savedTaskIds, setSavedTaskIds] = useState<Set<string>>(new Set());
   const [newTaskName, setNewTaskName] = useState("");
   const [employees, setEmployees] = useState<{ name: string; email: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +120,7 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
       .then((data) => {
         if (Array.isArray(data)) {
           setTasks(data);
+          setSavedTaskIds(new Set(data.map((t: any) => String(t.id))));
         }
       })
       .catch((err) => console.error("Failed to fetch tasks:", err))
@@ -258,6 +265,10 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
   }
 
   function toggleStage(taskId: string, stage: string) {
+    const current = tasks.find((t) => t.id === taskId);
+    if (current?.selectedStages.includes(stage) && !confirmStageRemoval(current.name, stage, current.buckets[stage])) {
+      return;
+    }
     setDirty(true);
     setTasks((prev) =>
       prev.map((t) => {
@@ -687,6 +698,12 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
             </button>
             <button
               onClick={async () => {
+                // Every new task needs at least one stage
+                const noStage = tasks.filter((t) => !savedTaskIds.has(t.id) && t.selectedStages.length === 0);
+                if (noStage.length) {
+                  alert(`Select at least one stage for: ${noStage.map((t) => t.name).join(", ")}`);
+                  return;
+                }
                 setSaving(true);
                 try {
                   // Save project name/description
@@ -706,6 +723,7 @@ export default function ProjectEdit({ userEmail }: { userEmail: string }) {
                     const result = await res.json();
                     // Update task IDs with real DB IDs
                     if (result.savedTaskIds) {
+                      setSavedTaskIds(new Set(result.savedTaskIds.map((m: any) => String(m.dbId))));
                       setTasks((prev) =>
                         prev.map((t) => {
                           const mapping = result.savedTaskIds.find((m: any) => m.clientId === t.id);

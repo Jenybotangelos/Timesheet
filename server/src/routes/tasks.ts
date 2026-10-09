@@ -383,10 +383,14 @@ router.get("/weekly", async (req, res) => {
            t.employee_email, e.name AS employee_name,
            t.task_date, t.task_description, t.status, t.project_id,
            p.name AS project_name,
+           t.project_task_id, pt.task_name AS project_task_name,
+           t.bucket_id, b.bucket_name,
            o.from_time_utc, o.to_time_utc, o.override_date
          FROM timesheet_task_entries t
          JOIN timesheet_employees e ON e.email = t.employee_email
          LEFT JOIN timesheet_projects p ON p.id = t.project_id
+         LEFT JOIN timesheet_project_tasks pt ON pt.id = t.project_task_id
+         LEFT JOIN timesheet_task_buckets b ON b.id = t.bucket_id
          LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
          WHERE t.task_date >= @startDate AND t.task_date <= @endDate
          ORDER BY e.name, t.task_date, o.from_time_utc`
@@ -424,6 +428,10 @@ router.get("/weekly", async (req, res) => {
         status: r.status,
         project_id: r.project_id,
         project_name: r.project_name,
+        project_task_id: r.project_task_id,
+        project_task_name: r.project_task_name,
+        bucket_id: r.bucket_id,
+        bucket_name: r.bucket_name,
         from_time_ist: fromIst,
         to_time_ist: toIst,
       };
@@ -465,14 +473,28 @@ router.get("/project-report", async (req, res) => {
            t.employee_email, e.name AS employee_name,
            t.task_date, t.task_description, t.status, t.project_id,
            p.name AS project_name,
+           t.project_task_id, pt.task_name AS project_task_name,
+           t.bucket_id, b.bucket_name,
            o.from_time_utc, o.to_time_utc, o.override_date
          FROM timesheet_task_entries t
          JOIN timesheet_employees e ON e.email = t.employee_email
          LEFT JOIN timesheet_projects p ON p.id = t.project_id
+         LEFT JOIN timesheet_project_tasks pt ON pt.id = t.project_task_id
+         LEFT JOIN timesheet_task_buckets b ON b.id = t.bucket_id
          LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
-         WHERE t.project_id IS NOT NULL
-         ORDER BY p.name, e.name, t.task_date, o.from_time_utc`
+         WHERE t.project_id IS NOT NULL`
       );
+
+    // Sort in JS: an SQL ORDER BY carrying the NVARCHAR(MAX) task_description
+    // column makes the query exceed the 15s request timeout.
+    const str = (v: any) => (v == null ? "" : String(v));
+    const time = (v: any) => (v instanceof Date ? v.getTime() : v == null ? -1 : new Date(v).getTime());
+    result.recordset.sort((a: any, b: any) =>
+      str(a.project_name).localeCompare(str(b.project_name), undefined, { sensitivity: "base" }) ||
+      str(a.employee_name).localeCompare(str(b.employee_name), undefined, { sensitivity: "base" }) ||
+      time(a.task_date) - time(b.task_date) ||
+      time(a.from_time_utc) - time(b.from_time_utc)
+    );
 
     const rows = result.recordset.map((r: any) => {
       const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc || "");
@@ -504,6 +526,10 @@ router.get("/project-report", async (req, res) => {
         status: r.status,
         project_id: r.project_id,
         project_name: r.project_name,
+        project_task_id: r.project_task_id,
+        project_task_name: r.project_task_name,
+        bucket_id: r.bucket_id,
+        bucket_name: r.bucket_name,
         from_time_ist: fromIst,
         to_time_ist: toIst,
       };
