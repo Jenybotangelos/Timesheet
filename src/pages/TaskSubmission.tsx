@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import FilterHeader, { optionsFrom } from "../components/FilterHeader";
 
 const API_BASE = "/api";
 
@@ -56,15 +55,8 @@ interface AssignmentProject {
   tasks: AssignmentTask[];
 }
 
-export default function TaskSubmission({
-  userEmail,
-  userRole,
-}: {
-  userEmail: string;
-  userRole: string;
-}) {
+export default function TaskSubmission({ userEmail }: { userEmail: string }) {
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<"my-tasks" | "weekly-report">("my-tasks");
   const [selectedDate, setSelectedDate] = useState(() => {
     return (
       sessionStorage.getItem("tasksheet_selected_date") ||
@@ -83,59 +75,6 @@ export default function TaskSubmission({
   const [assignments, setAssignments] = useState<AssignmentProject[]>([]);
   // Set by the last Save/Submit attempt, so missing fields get highlighted
   const [showErrors, setShowErrors] = useState<"save" | "submit" | null>(null);
-
-  // Weekly report state (admin only)
-  const [reportStartDate, setReportStartDate] = useState(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = day === 0 ? -13 : -day - 6;
-    const mon = new Date(d);
-    mon.setDate(d.getDate() + diff);
-    return mon.toISOString().split("T")[0];
-  });
-  const [reportEndDate, setReportEndDate] = useState(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = day === 0 ? -7 : -day;
-    const sun = new Date(d);
-    sun.setDate(d.getDate() + diff);
-    return sun.toISOString().split("T")[0];
-  });
-  const [weeklyData, setWeeklyData] = useState<any[]>([]);
-  const [weeklyLoading, setWeeklyLoading] = useState(false);
-  const [employees, setEmployees] = useState<{ id: number; name: string; email: string }[]>([]);
-  const [reportEmployee, setReportEmployee] = useState<string | null>(null);
-  const [reportProject, setReportProject] = useState<number | null>(null);
-  const [reportTask, setReportTask] = useState<number | null>(null);
-  const [reportStage, setReportStage] = useState<string | null>(null);
-  const [openDropdown, setOpenDropdown] = useState<"employee" | "project" | "task" | "stage" | null>(null);
-
-  function toggleDropdown(name: "employee" | "project" | "task" | "stage") {
-    setOpenDropdown((cur) => (cur === name ? null : name));
-  }
-
-  useEffect(() => {
-    if (!openDropdown) return;
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest("[data-dropdown]")) setOpenDropdown(null);
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [openDropdown]);
-
-  // Weekly report filters; task and stage choices narrow to the selected project
-  const reportEmployeeOptions = employees.map((e) => ({ value: e.email, label: e.name }));
-  const reportProjectOptions = optionsFrom<number>(weeklyData, (r) => r.project_id, (r) => r.project_name);
-  const reportProjectRows = reportProject ? weeklyData.filter((r) => r.project_id === reportProject) : weeklyData;
-  const reportTaskOptions = optionsFrom<number>(reportProjectRows, (r) => r.project_task_id, (r) => r.project_task_name);
-  const reportStageOptions = optionsFrom<string>(reportProjectRows, (r) => r.bucket_name, (r) => r.bucket_name);
-  const filteredWeekly = reportProjectRows.filter(
-    (r) =>
-      (!reportEmployee || r.employee_email === reportEmployee) &&
-      (!reportTask || r.project_task_id === reportTask) &&
-      (!reportStage || r.bucket_name === reportStage)
-  );
 
   const submitted = status === "submitted";
   const isEditable = isDateEditable(selectedDate) && !submitted;
@@ -175,44 +114,7 @@ export default function TaskSubmission({
       .then((r) => r.json())
       .then((data) => setAssignments(data))
       .catch((err) => console.error("Failed to fetch assignments:", err));
-    fetch(`${API_BASE}/employees`)
-      .then((r) => r.json())
-      .then((data) => setEmployees(data))
-      .catch((err) => console.error("Failed to fetch employees:", err));
   }, []);
-
-  async function fetchWeeklyReport() {
-    setWeeklyLoading(true);
-    try {
-      const res = await fetch(
-        `${API_BASE}/tasks/weekly?startDate=${reportStartDate}&endDate=${reportEndDate}&email=${userEmail}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setWeeklyData(data);
-      } else {
-        const err = await res.json();
-        console.error("Weekly report error:", err);
-        setWeeklyData([]);
-      }
-    } catch (err) {
-      console.error("Failed to fetch weekly report:", err);
-      setWeeklyData([]);
-    } finally {
-      setWeeklyLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (viewMode === "weekly-report") {
-      fetchWeeklyReport();
-    }
-  }, [reportStartDate, reportEndDate, viewMode]);
-
-  function formatDateShort(dateStr: string): string {
-    const d = new Date(dateStr + "T00:00:00");
-    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-  }
 
   useEffect(() => {
     sessionStorage.setItem("tasksheet_selected_date", selectedDate);
@@ -493,166 +395,12 @@ export default function TaskSubmission({
             ← Back
           </button>
           <h1 className="text-lg sm:text-xl font-semibold text-white">
-            {viewMode === "weekly-report" ? "Reports" : "My Tasks"}
+            My Tasks
           </h1>
-          {userRole === "admin" && (
-            <div className="ml-auto flex bg-white/10 rounded-lg border border-white/20 p-0.5">
-              <button
-                onClick={() => setViewMode("my-tasks")}
-                className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
-                  viewMode === "my-tasks"
-                    ? "bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white shadow"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                My Tasks
-              </button>
-              <button
-                onClick={() => setViewMode("weekly-report")}
-                className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
-                  viewMode === "weekly-report"
-                    ? "bg-gradient-to-r from-purple-500 to-purple-700 text-white shadow"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                Report
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
       <div className="max-w-5xl mx-auto p-4 sm:p-6 pb-24">
-        {/* Weekly Report View (Admin) */}
-        {viewMode === "weekly-report" && userRole === "admin" ? (
-          <>
-            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 px-4 sm:px-5 py-3 mb-4 shadow-lg flex flex-wrap items-center gap-4">
-              <span className="text-xs font-semibold text-white/70 uppercase tracking-wide">
-                Date Range
-              </span>
-              <input
-                type="date"
-                value={reportStartDate}
-                onChange={(e) => setReportStartDate(e.target.value)}
-                className="border border-white/30 rounded-lg px-2 py-1 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
-              />
-              <span className="text-white/50 text-sm">to</span>
-              <input
-                type="date"
-                value={reportEndDate}
-                onChange={(e) => setReportEndDate(e.target.value)}
-                className="border border-white/30 rounded-lg px-2 py-1 text-sm bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-[#4fc3f7]"
-              />
-            </div>
-
-            {weeklyLoading ? (
-              <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 p-16 text-center shadow-xl">
-                <p className="text-white/40 text-sm">Loading weekly report...</p>
-              </div>
-            ) : (
-              <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/15 overflow-hidden shadow-xl">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[900px]">
-                    <thead>
-                      <tr className="bg-gradient-to-r from-[#0078d4] to-[#4fc3f7]">
-                        <FilterHeader
-                          label="Employee"
-                          options={reportEmployeeOptions}
-                          value={reportEmployee}
-                          onChange={(v) => { setReportEmployee(v); setOpenDropdown(null); }}
-                          open={openDropdown === "employee"}
-                          onToggle={() => toggleDropdown("employee")}
-                        />
-                        <th className="px-4 py-3 text-left font-semibold text-white">Date</th>
-                        <th className="px-4 py-3 text-left font-semibold text-white">Time</th>
-                        <FilterHeader
-                          label="Project"
-                          options={reportProjectOptions}
-                          value={reportProject}
-                          onChange={(v) => { setReportProject(v); setReportTask(null); setOpenDropdown(null); }}
-                          open={openDropdown === "project"}
-                          onToggle={() => toggleDropdown("project")}
-                        />
-                        <FilterHeader
-                          label="Task"
-                          options={reportTaskOptions}
-                          value={reportTask}
-                          onChange={(v) => { setReportTask(v); setOpenDropdown(null); }}
-                          open={openDropdown === "task"}
-                          onToggle={() => toggleDropdown("task")}
-                        />
-                        <FilterHeader
-                          label="Stage"
-                          options={reportStageOptions}
-                          value={reportStage}
-                          onChange={(v) => { setReportStage(v); setOpenDropdown(null); }}
-                          open={openDropdown === "stage"}
-                          onToggle={() => toggleDropdown("stage")}
-                        />
-                        <th className="px-4 py-3 text-left font-semibold text-white">Task Description</th>
-                        <th className="px-4 py-3 text-left font-semibold text-white w-[90px]">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredWeekly.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="px-4 py-16 text-center text-white/40 text-sm">
-                            No tasks found for this date range
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredWeekly.map((t: any, idx: number) => {
-                          const fromIst = t.from_time_ist || "";
-                          const toIst = t.to_time_ist || "";
-                          const dateStr =
-                            typeof t.task_date === "string"
-                              ? t.task_date.split("T")[0]
-                              : new Date(t.task_date).toISOString().split("T")[0];
-                          return (
-                            <tr key={idx} className={idx % 2 === 0 ? "bg-white/5" : "bg-white/[0.02]"}>
-                              <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs font-medium whitespace-nowrap">
-                                {t.employee_name}
-                              </td>
-                              <td className="px-4 py-2 text-white/70 border-t border-white/10 text-xs whitespace-nowrap">
-                                {formatDateShort(dateStr)}
-                              </td>
-                              <td className="px-4 py-2 text-[#4fc3f7] font-medium border-t border-white/10 text-xs whitespace-nowrap">
-                                {fromIst && toIst ? `${fromIst} – ${toIst}` : "—"}
-                              </td>
-                              <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
-                                {t.project_name || "—"}
-                              </td>
-                              <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
-                                {t.project_task_name || "—"}
-                              </td>
-                              <td className="px-4 py-2 text-white/60 border-t border-white/10 text-xs whitespace-nowrap">
-                                {t.bucket_name || "—"}
-                              </td>
-                              <td className="px-4 py-2 text-white/80 border-t border-white/10 text-xs">
-                                {t.task_description}
-                              </td>
-                              <td className="px-4 py-2 border-t border-white/10 whitespace-nowrap">
-                                <span
-                                  className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                    t.status === "submitted"
-                                      ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                                      : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                                  }`}
-                                >
-                                  {t.status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
           <>
             {/* Date picker + status */}
             <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-4 sm:p-5 mb-4 sm:mb-6 shadow-lg flex flex-wrap items-end gap-4">
@@ -985,7 +733,6 @@ export default function TaskSubmission({
               </div>
             )}
           </>
-        )}
       </div>
     </div>
   );

@@ -1,44 +1,54 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import FilterHeader, { optionsFrom } from "../components/FilterHeader";
+import FilterHeader from "../components/FilterHeader";
+import Pagination from "../components/Pagination";
+import DateFilterHeader, { type DateRange } from "../components/DateFilterHeader";
+import { formatDateShort } from "../components/dateRanges";
+import { useReport, formatMinutes } from "../components/useReport";
 
 const API_BASE = "/api";
 
-interface Project {
-  id: number;
-  name: string;
-}
+type FilterName = "employee" | "date" | "project" | "task" | "stage";
 
 export default function ProjectReport({ userEmail }: { userEmail: string }) {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<{ name: string; email: string }[]>([]);
-  const [reportData, setReportData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [filterProject, setFilterProject] = useState<number | null>(null);
   const [filterEmployee, setFilterEmployee] = useState<string | null>(null);
   const [filterTask, setFilterTask] = useState<number | null>(null);
   const [filterStage, setFilterStage] = useState<string | null>(null);
-  const [openDropdown, setOpenDropdown] = useState<"employee" | "project" | "task" | "stage" | null>(null);
+  const [filterDate, setFilterDate] = useState<DateRange | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<FilterName | null>(null);
 
-  function toggleDropdown(name: "employee" | "project" | "task" | "stage") {
+  // Filtering, totals and paging are done by the server
+  const { data, loading } = useReport(`${API_BASE}/tasks/project-report`, {
+    email: userEmail,
+    page,
+    employee: filterEmployee,
+    projectId: filterProject,
+    taskId: filterTask,
+    stage: filterStage,
+    startDate: filterDate?.start ?? null,
+    endDate: filterDate?.end ?? null,
+  });
+
+  function toggleDropdown(name: FilterName) {
     setOpenDropdown((cur) => (cur === name ? null : name));
   }
 
+  // Any filter change starts again from page 1
+  function applyFilter(apply: () => void) {
+    apply();
+    setPage(1);
+    setOpenDropdown(null);
+  }
+
   useEffect(() => {
-    Promise.all([
-      fetch(`${API_BASE}/projects`).then((r) => r.json()),
-      fetch(`${API_BASE}/tasks/project-report?email=${userEmail}`).then((r) => r.json()),
-      fetch(`${API_BASE}/employees`).then((r) => r.json()),
-    ])
-      .then(([projectsData, reportRows, emps]) => {
-        setProjects(Array.isArray(projectsData) ? projectsData.filter((p: any) => p.is_active) : []);
-        setReportData(Array.isArray(reportRows) ? reportRows : []);
-        setEmployees(Array.isArray(emps) ? emps : []);
-        if (!Array.isArray(reportRows)) console.error("Project report failed:", reportRows);
-      })
-      .catch((err) => console.error("Failed to fetch report:", err))
-      .finally(() => setLoading(false));
+    fetch(`${API_BASE}/employees`)
+      .then((r) => r.json())
+      .then((emps) => setEmployees(Array.isArray(emps) ? emps : []))
+      .catch((err) => console.error("Failed to fetch employees:", err));
   }, []);
 
   // Close dropdowns on outside click
@@ -53,39 +63,7 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
   }, [openDropdown]);
 
   const employeeOptions = employees.map((e) => ({ value: e.email, label: e.name }));
-  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
-  // Task and stage choices narrow to the selected project
-  const projectRows = filterProject ? reportData.filter((r) => r.project_id === filterProject) : reportData;
-  const taskOptions = optionsFrom<number>(projectRows, (r) => r.project_task_id, (r) => r.project_task_name);
-  const stageOptions = optionsFrom<string>(projectRows, (r) => r.bucket_name, (r) => r.bucket_name);
-
-  let filtered = projectRows;
-  if (filterEmployee) {
-    filtered = filtered.filter((r) => r.employee_email === filterEmployee);
-  }
-  if (filterTask) {
-    filtered = filtered.filter((r) => r.project_task_id === filterTask);
-  }
-  if (filterStage) {
-    filtered = filtered.filter((r) => r.bucket_name === filterStage);
-  }
-
-  // Group by project for totals
-  const projectTotals = new Map<string, number>();
-  filtered.forEach((r) => {
-    const pName = r.project_name || "Unassigned";
-    const fromIst = r.from_time_ist || "";
-    const toIst = r.to_time_ist || "";
-    if (fromIst && toIst) {
-      const [fh, fm] = fromIst.split(":").map(Number);
-      const [th, tm] = toIst.split(":").map(Number);
-      let diff = th * 60 + tm - (fh * 60 + fm);
-      if (diff < 0) diff += 1440;
-      projectTotals.set(pName, (projectTotals.get(pName) || 0) + diff);
-    }
-  });
-
-  const grandTotalMin = Array.from(projectTotals.values()).reduce((a, b) => a + b, 0);
+  const rows = data.rows;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#16213e] to-[#0f3460]">
@@ -104,21 +82,29 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
 
       <div className="max-w-6xl mx-auto p-4 sm:p-6">
         {/* Project totals summary */}
-        {projectTotals.size > 0 && (
+        {data.projectTotals.length > 0 && (
           <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 px-4 sm:px-5 py-3 mb-4 shadow-lg flex flex-wrap gap-4 sm:gap-6">
-            {Array.from(projectTotals.entries()).map(([pName, mins]) => (
-              <div key={pName} className="flex items-center gap-2">
-                <span className="text-white/80 text-sm font-medium">{pName}:</span>
+            {data.projectTotals.map(({ project_name, minutes }) => (
+              <div key={project_name} className="flex items-center gap-2">
+                <span className="text-white/80 text-sm font-medium">{project_name}:</span>
                 <span className="text-[#4fc3f7] text-sm font-bold">
-                  {Math.floor(mins / 60)}h {mins % 60 > 0 ? `${mins % 60}m` : ""}
+                  {Math.floor(minutes / 60)}h {minutes % 60 > 0 ? `${minutes % 60}m` : ""}
                 </span>
               </div>
             ))}
-            <div className="ml-auto flex items-center gap-2 border-l border-white/20 pl-4 sm:pl-6">
-              <span className="text-white font-semibold text-sm">Total:</span>
-              <span className="text-[#4fc3f7] font-bold text-sm">
-                {Math.floor(grandTotalMin / 60)} hrs{grandTotalMin % 60 > 0 ? ` ${grandTotalMin % 60} mins` : ""}
+            <div className="ml-auto flex items-center gap-4 border-l border-white/20 pl-4 sm:pl-6">
+              {filterDate && (
+                <span className="text-white/50 text-xs sm:text-sm">
+                  {filterDate.start === filterDate.end
+                    ? formatDateShort(filterDate.start)
+                    : `${formatDateShort(filterDate.start)} – ${formatDateShort(filterDate.end)}`}
+                </span>
+              )}
+              <span className="text-white/80 text-sm">
+                <span className="font-semibold text-white">Rows:</span> {data.totalRows}
               </span>
+              <span className="text-white font-semibold text-sm">Total:</span>
+              <span className="text-[#4fc3f7] font-bold text-sm -ml-2">{formatMinutes(data.totalMinutes)}</span>
             </div>
           </div>
         )}
@@ -138,37 +124,40 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
                       label="Employee"
                       options={employeeOptions}
                       value={filterEmployee}
-                      onChange={(v) => { setFilterEmployee(v); setOpenDropdown(null); }}
+                      onChange={(v) => applyFilter(() => setFilterEmployee(v))}
                       open={openDropdown === "employee"}
                       onToggle={() => toggleDropdown("employee")}
                     />
-                    <th className="px-4 py-3 text-left font-semibold text-white whitespace-nowrap">
-                      Date
-                    </th>
+                    <DateFilterHeader
+                      value={filterDate}
+                      onChange={(v) => applyFilter(() => setFilterDate(v))}
+                      open={openDropdown === "date"}
+                      onToggle={() => toggleDropdown("date")}
+                    />
                     <th className="px-4 py-3 text-left font-semibold text-white whitespace-nowrap">
                       Time
                     </th>
                     <FilterHeader
                       label="Project"
-                      options={projectOptions}
+                      options={data.options.projects}
                       value={filterProject}
-                      onChange={(v) => { setFilterProject(v); setFilterTask(null); setOpenDropdown(null); }}
+                      onChange={(v) => applyFilter(() => { setFilterProject(v); setFilterTask(null); setFilterStage(null); })}
                       open={openDropdown === "project"}
                       onToggle={() => toggleDropdown("project")}
                     />
                     <FilterHeader
                       label="Task"
-                      options={taskOptions}
+                      options={data.options.tasks}
                       value={filterTask}
-                      onChange={(v) => { setFilterTask(v); setOpenDropdown(null); }}
+                      onChange={(v) => applyFilter(() => setFilterTask(v))}
                       open={openDropdown === "task"}
                       onToggle={() => toggleDropdown("task")}
                     />
                     <FilterHeader
                       label="Stage"
-                      options={stageOptions}
+                      options={data.options.stages}
                       value={filterStage}
-                      onChange={(v) => { setFilterStage(v); setOpenDropdown(null); }}
+                      onChange={(v) => applyFilter(() => setFilterStage(v))}
                       open={openDropdown === "stage"}
                       onToggle={() => toggleDropdown("stage")}
                     />
@@ -178,14 +167,14 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {rows.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-12 text-center text-white/40 text-sm">
                         No entries found
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((r: any, idx: number) => {
+                    rows.map((r: any, idx: number) => {
                       const dateStr =
                         typeof r.task_date === "string" ? r.task_date.split("T")[0] : "";
                       return (
@@ -221,21 +210,21 @@ export default function ProjectReport({ userEmail }: { userEmail: string }) {
                     })
                   )}
                 </tbody>
-                {filtered.length > 0 && (
+                {rows.length > 0 && (
                   <tfoot>
                     <tr className="bg-white/10 border-t-2 border-white/20">
                       <td colSpan={2} className="px-4 py-3 text-white font-semibold text-sm">
                         Grand Total
                       </td>
                       <td colSpan={5} className="px-4 py-3 text-[#4fc3f7] font-bold text-sm">
-                        {Math.floor(grandTotalMin / 60)} hrs
-                        {grandTotalMin % 60 > 0 ? ` ${grandTotalMin % 60} mins` : ""}
+                        {formatMinutes(data.totalMinutes)}
                       </td>
                     </tr>
                   </tfoot>
                 )}
               </table>
             </div>
+            <Pagination page={page} pageSize={data.pageSize} totalRows={data.totalRows} onPageChange={setPage} />
           </div>
         )}
       </div>

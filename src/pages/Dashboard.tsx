@@ -131,7 +131,29 @@ export default function Dashboard({
       {/* Header bar */}
       <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-white">Task Sheet</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {userRole === "admin" && (
+            <>
+              <button
+                onClick={() => navigate("/approvals")}
+                className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-xs sm:text-sm font-medium transition-all"
+              >
+                Approvals
+              </button>
+              <button
+                onClick={() => navigate("/reports/date")}
+                className="px-3 py-1.5 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-xs sm:text-sm font-medium transition-all shadow-md"
+              >
+                Date-wise Report
+              </button>
+              <button
+                onClick={() => navigate("/projects")}
+                className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg hover:from-purple-400 hover:to-purple-600 text-xs sm:text-sm font-medium transition-all shadow-md"
+              >
+                Project-wise Report
+              </button>
+            </>
+          )}
           <span className="text-white/60 text-xs sm:text-sm truncate max-w-[200px] sm:max-w-none">
             {userEmail}
           </span>
@@ -237,14 +259,6 @@ export default function Dashboard({
             >
               My Tasks
             </button>
-            {userRole === "admin" && (
-              <button
-                onClick={() => navigate("/projects")}
-                className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg hover:from-purple-400 hover:to-purple-600 text-sm font-medium transition-all shadow-md text-center"
-              >
-                Projects
-              </button>
-            )}
           </div>
         </div>
 

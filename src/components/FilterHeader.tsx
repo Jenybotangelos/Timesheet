@@ -66,20 +66,3 @@ export default function FilterHeader<T extends string | number>({
     </th>
   );
 }
-
-// Unique, name-sorted options built from report rows.
-export function optionsFrom<T extends string | number>(
-  rows: any[],
-  getValue: (r: any) => T | null | undefined,
-  getLabel: (r: any) => string | null | undefined
-): FilterOption<T>[] {
-  const seen = new Map<T, string>();
-  for (const r of rows) {
-    const v = getValue(r);
-    const l = getLabel(r);
-    if (v != null && l && !seen.has(v)) seen.set(v, l);
-  }
-  return Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) =>
-    a.label.localeCompare(b.label, undefined, { sensitivity: "base" })
-  );
-}

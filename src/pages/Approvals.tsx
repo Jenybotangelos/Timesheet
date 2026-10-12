@@ -323,8 +323,8 @@ export default function Approvals({ userEmail }: { userEmail: string }) {
       {/* Header */}
       <div className="bg-white/10 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-4">
         <div className="max-w-5xl mx-auto flex flex-wrap items-center gap-3">
-          <button onClick={() => navigate("/projects")} className="text-[#4fc3f7] hover:text-white transition-colors">
-            ← Back to Projects
+          <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">
+            ← Back
           </button>
           <h1 className="text-lg sm:text-xl font-semibold text-white">Approvals</h1>
           <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium border border-purple-500/30">

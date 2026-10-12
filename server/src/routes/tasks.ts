@@ -353,189 +353,225 @@ router.post("/", async (req, res) => {
   }
 });
 
+// ---- Paginated reports (admin only) ----
+// Both reports share one query. Filtering, totals and paging happen in SQL so the
+// page only receives one page of rows plus the totals for everything matching.
+
+// IST date of an entry: override date + UTC start time + 5:30
+const IST_DATE_SQL = `CAST(DATEADD(minute, DATEPART(hour, o.from_time_utc) * 60 + DATEPART(minute, o.from_time_utc) + 330, CAST(o.override_date AS datetime2)) AS date)`;
+// Length of an entry in minutes (an entry may cross midnight)
+const MINUTES_SQL = `(DATEDIFF(minute, o.from_time_utc, o.to_time_utc) + 1440) % 1440`;
+
+const REPORT_FROM = `
+  FROM timesheet_task_entries t
+  JOIN timesheet_employees e ON e.email = t.employee_email
+  LEFT JOIN timesheet_projects p ON p.id = t.project_id
+  LEFT JOIN timesheet_project_tasks pt ON pt.id = t.project_task_id
+  LEFT JOIN timesheet_task_buckets b ON b.id = t.bucket_id
+  LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id`;
+
+const ORDER_BY = {
+  project: "p.name, e.name, t.task_date, o.from_time_utc, t.id",
+  date: "e.name, t.task_date, o.from_time_utc, t.id",
+};
+
+async function isAdmin(pool: any, email: string): Promise<boolean> {
+  const r = await pool.request()
+    .input("email", email)
+    .query("SELECT role FROM timesheet_employees WHERE email = @email");
+  return r.recordset.length > 0 && r.recordset[0].role === "admin";
+}
+
+function toIstRow(r: any) {
+  const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc || "");
+  const toRaw = r.to_time_utc instanceof Date ? r.to_time_utc.toISOString() : String(r.to_time_utc || "");
+  const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
+  const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
+
+  const overrideDateRaw = r.override_date instanceof Date
+    ? r.override_date.toISOString().split("T")[0]
+    : String(r.override_date || "").split("T")[0];
+
+  // Convert UTC date+time together to IST date+time
+  let istDate = overrideDateRaw;
+  let fromIst: string | null = null;
+  let toIst: string | null = null;
+  if (fromUtc && overrideDateRaw) {
+    const fromResult = utcDateTimeToIst(overrideDateRaw, fromUtc);
+    istDate = fromResult.date;
+    fromIst = fromResult.time;
+  }
+  if (toUtc && overrideDateRaw) {
+    toIst = utcDateTimeToIst(overrideDateRaw, toUtc).time;
+  }
+
+  return {
+    employee_email: r.employee_email,
+    employee_name: r.employee_name,
+    task_date: istDate,
+    task_description: r.task_description,
+    status: r.status,
+    project_id: r.project_id,
+    project_name: r.project_name,
+    project_task_id: r.project_task_id,
+    project_task_name: r.project_task_name,
+    bucket_id: r.bucket_id,
+    bucket_name: r.bucket_name,
+    from_time_ist: fromIst,
+    to_time_ist: toIst,
+  };
+}
+
+async function runReport(req: any, res: any, kind: "project" | "date") {
+  const q = req.query;
+  const email = q.email as string;
+  if (!email) {
+    return res.status(400).json({ error: "email is required" });
+  }
+  if (kind === "date" && (!q.startDate || !q.endDate)) {
+    return res.status(400).json({ error: "startDate, endDate, and email are required" });
+  }
+
+  // The date-wise report always has a range; the project report may optionally be narrowed to one
+  const hasRange = !!(q.startDate && q.endDate);
+
+  const pool = await getPool();
+  if (!(await isAdmin(pool, email))) {
+    return res.status(403).json({ error: "Only admins can view reports" });
+  }
+
+  const page = Math.max(1, parseInt(q.page as string) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(q.pageSize as string) || 50));
+  const toId = (v: any) => (v && !isNaN(parseInt(v)) ? parseInt(v) : null);
+  const filters = {
+    employee: (q.employee as string) || null,
+    projectId: toId(q.projectId),
+    taskId: toId(q.taskId),
+    stage: (q.stage as string) || null,
+  };
+
+  // Base scope: which entries the report covers at all
+  const base: string[] = [];
+  if (kind === "project") base.push("t.project_id IS NOT NULL");
+  if (hasRange) {
+    // task_date prefilter (one day wider, as UTC dates can map to the next IST day) keeps it index-friendly
+    base.push("t.task_date >= @prevStart AND t.task_date <= @endDate");
+    base.push(`${IST_DATE_SQL} BETWEEN @startDate AND @endDate`);
+  }
+  // Column filters chosen in the table headers
+  const projectScope = [...base, ...(filters.projectId ? ["t.project_id = @projectId"] : [])];
+  const filtered = [
+    ...projectScope,
+    ...(filters.employee ? ["t.employee_email = @employee"] : []),
+    ...(filters.taskId ? ["t.project_task_id = @taskId"] : []),
+    ...(filters.stage ? ["b.bucket_name = @stage"] : []),
+  ];
+  const where = (conds: string[]) => (conds.length ? `WHERE ${conds.join(" AND ")}` : "");
+
+  const request = () => {
+    const r = pool.request();
+    if (hasRange) {
+      r.input("startDate", q.startDate as string);
+      r.input("endDate", q.endDate as string);
+      r.input("prevStart", prevDay(q.startDate as string));
+    }
+    if (filters.projectId) r.input("projectId", filters.projectId);
+    if (filters.employee) r.input("employee", filters.employee);
+    if (filters.taskId) r.input("taskId", filters.taskId);
+    if (filters.stage) r.input("stage", filters.stage);
+    return r;
+  };
+
+  // Pick the page using only short columns, then fetch those rows in full.
+  // Sorting together with the NVARCHAR(MAX) description is what made the old query time out.
+  const pageQuery = request()
+    .input("offset", (page - 1) * pageSize)
+    .input("pageSize", pageSize)
+    .query(`
+      WITH page_ids AS (
+        SELECT t.id, ROW_NUMBER() OVER (ORDER BY ${ORDER_BY[kind]}) AS rn
+        ${REPORT_FROM}
+        ${where(filtered)}
+        ORDER BY ${ORDER_BY[kind]}
+        OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+      )
+      SELECT
+        t.employee_email, e.name AS employee_name,
+        t.task_date, t.task_description, t.status, t.project_id,
+        p.name AS project_name,
+        t.project_task_id, pt.task_name AS project_task_name,
+        t.bucket_id, b.bucket_name,
+        o.from_time_utc, o.to_time_utc, o.override_date
+      FROM page_ids pi
+      JOIN timesheet_task_entries t ON t.id = pi.id
+      JOIN timesheet_employees e ON e.email = t.employee_email
+      LEFT JOIN timesheet_projects p ON p.id = t.project_id
+      LEFT JOIN timesheet_project_tasks pt ON pt.id = t.project_task_id
+      LEFT JOIN timesheet_task_buckets b ON b.id = t.bucket_id
+      LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
+      ORDER BY pi.rn`);
+
+  // Row count and hours for everything matching the filters, per project
+  const totalsQuery = request().query(`
+    SELECT p.name AS project_name, COUNT(*) AS row_count, SUM(${MINUTES_SQL}) AS minutes
+    ${REPORT_FROM}
+    ${where(filtered)}
+    GROUP BY p.name`);
+
+  // Dropdown choices: projects across the report scope; tasks and stages narrow to the chosen project
+  const optionsQuery = request().query(`
+    SELECT DISTINCT 'project' AS kind, CAST(t.project_id AS NVARCHAR(20)) AS value, p.name AS label
+    ${REPORT_FROM} ${where([...base, "t.project_id IS NOT NULL"])}
+    UNION
+    SELECT DISTINCT 'task', CAST(t.project_task_id AS NVARCHAR(20)), pt.task_name
+    ${REPORT_FROM} ${where([...projectScope, "t.project_task_id IS NOT NULL", "pt.task_name IS NOT NULL"])}
+    UNION
+    SELECT DISTINCT 'stage', b.bucket_name, b.bucket_name
+    ${REPORT_FROM} ${where([...projectScope, "b.bucket_name IS NOT NULL"])}`);
+
+  const [pageResult, totalsResult, optionsResult] = await Promise.all([pageQuery, totalsQuery, optionsQuery]);
+
+  const byLabel = (a: { label: string }, b: { label: string }) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+  const opts = (k: string) => optionsResult.recordset.filter((o: any) => o.kind === k && o.label);
+
+  const projectTotals = totalsResult.recordset
+    .map((r: any) => ({ project_name: r.project_name || "Unassigned", minutes: r.minutes || 0 }))
+    .sort((a: any, b: any) => a.project_name.localeCompare(b.project_name, undefined, { sensitivity: "base" }));
+
+  res.json({
+    rows: pageResult.recordset.map(toIstRow),
+    page,
+    pageSize,
+    totalRows: totalsResult.recordset.reduce((sum: number, r: any) => sum + r.row_count, 0),
+    totalMinutes: projectTotals.reduce((sum: number, p: any) => sum + p.minutes, 0),
+    projectTotals,
+    options: {
+      projects: opts("project").map((o: any) => ({ value: parseInt(o.value), label: o.label })).sort(byLabel),
+      tasks: opts("task").map((o: any) => ({ value: parseInt(o.value), label: o.label })).sort(byLabel),
+      stages: opts("stage").map((o: any) => ({ value: o.value, label: o.label })).sort(byLabel),
+    },
+  });
+}
+
 // GET /api/tasks/weekly?startDate=2026-06-15&endDate=2026-06-21&email=admin@...
-// Returns all employees' submitted tasks for the week (admin only)
+//   &page=1&pageSize=50&employee=&projectId=&taskId=&stage=
+// Date-wise report: entries whose IST date falls in the range
 router.get("/weekly", async (req, res) => {
   try {
-    const { startDate, endDate, email } = req.query;
-    if (!startDate || !endDate || !email) {
-      return res.status(400).json({ error: "startDate, endDate, and email are required" });
-    }
-
-    const pool = await getPool();
-
-    // Check if requesting user is admin
-    const adminCheck = await pool.request()
-      .input("email", email as string)
-      .query("SELECT role FROM timesheet_employees WHERE email = @email");
-
-    if (adminCheck.recordset.length === 0 || adminCheck.recordset[0].role !== "admin") {
-      return res.status(403).json({ error: "Only admins can view weekly reports" });
-    }
-
-    // Get all task entries for the date range (expand by 1 day to catch UTC dates that map to IST range)
-    const prevStart = prevDay(startDate as string);
-    const result = await pool.request()
-      .input("startDate", prevStart)
-      .input("endDate", endDate as string)
-      .query(
-        `SELECT 
-           t.employee_email, e.name AS employee_name,
-           t.task_date, t.task_description, t.status, t.project_id,
-           p.name AS project_name,
-           t.project_task_id, pt.task_name AS project_task_name,
-           t.bucket_id, b.bucket_name,
-           o.from_time_utc, o.to_time_utc, o.override_date
-         FROM timesheet_task_entries t
-         JOIN timesheet_employees e ON e.email = t.employee_email
-         LEFT JOIN timesheet_projects p ON p.id = t.project_id
-         LEFT JOIN timesheet_project_tasks pt ON pt.id = t.project_task_id
-         LEFT JOIN timesheet_task_buckets b ON b.id = t.bucket_id
-         LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
-         WHERE t.task_date >= @startDate AND t.task_date <= @endDate
-         ORDER BY e.name, t.task_date, o.from_time_utc`
-      );
-
-    const rows = result.recordset.map((r: any) => {
-      const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc || "");
-      const toRaw = r.to_time_utc instanceof Date ? r.to_time_utc.toISOString() : String(r.to_time_utc || "");
-      const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
-      const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
-
-      // Get override_date as string
-      const overrideDateRaw = r.override_date instanceof Date
-        ? r.override_date.toISOString().split("T")[0]
-        : String(r.override_date || "").split("T")[0];
-
-      // Convert UTC date+time together to IST date+time
-      let istDate = overrideDateRaw;
-      let fromIst: string | null = null;
-      let toIst: string | null = null;
-      if (fromUtc && overrideDateRaw) {
-        const fromResult = utcDateTimeToIst(overrideDateRaw, fromUtc);
-        istDate = fromResult.date;
-        fromIst = fromResult.time;
-      }
-      if (toUtc && overrideDateRaw) {
-        toIst = utcDateTimeToIst(overrideDateRaw, toUtc).time;
-      }
-
-      return {
-        employee_email: r.employee_email,
-        employee_name: r.employee_name,
-        task_date: istDate,
-        task_description: r.task_description,
-        status: r.status,
-        project_id: r.project_id,
-        project_name: r.project_name,
-        project_task_id: r.project_task_id,
-        project_task_name: r.project_task_name,
-        bucket_id: r.bucket_id,
-        bucket_name: r.bucket_name,
-        from_time_ist: fromIst,
-        to_time_ist: toIst,
-      };
-    });
-
-    // Filter to only rows whose IST date falls within the requested range
-    const filtered = rows.filter((r: any) => r.task_date >= (startDate as string) && r.task_date <= (endDate as string));
-
-    res.json(filtered);
+    await runReport(req, res, "date");
   } catch (err) {
     console.error("Error fetching weekly report:", err);
     res.status(500).json({ error: "Failed to fetch weekly report" });
   }
 });
 
-// GET /api/tasks/project-report?email=admin@...
-// Returns all task entries grouped by project with total hours (no date limit)
+// GET /api/tasks/project-report?email=admin@...&page=1&pageSize=50&employee=&projectId=&taskId=&stage=
+//   &startDate=&endDate=   (optional; no dates means all time)
+// Project-wise report: all entries with a project, with hours per project
 router.get("/project-report", async (req, res) => {
   try {
-    const { email } = req.query;
-    if (!email) {
-      return res.status(400).json({ error: "email is required" });
-    }
-
-    const pool = await getPool();
-
-    // Check if requesting user is admin
-    const adminCheck = await pool.request()
-      .input("email", email as string)
-      .query("SELECT role FROM timesheet_employees WHERE email = @email");
-
-    if (adminCheck.recordset.length === 0 || adminCheck.recordset[0].role !== "admin") {
-      return res.status(403).json({ error: "Only admins can view project reports" });
-    }
-
-    const result = await pool.request()
-      .query(
-        `SELECT 
-           t.employee_email, e.name AS employee_name,
-           t.task_date, t.task_description, t.status, t.project_id,
-           p.name AS project_name,
-           t.project_task_id, pt.task_name AS project_task_name,
-           t.bucket_id, b.bucket_name,
-           o.from_time_utc, o.to_time_utc, o.override_date
-         FROM timesheet_task_entries t
-         JOIN timesheet_employees e ON e.email = t.employee_email
-         LEFT JOIN timesheet_projects p ON p.id = t.project_id
-         LEFT JOIN timesheet_project_tasks pt ON pt.id = t.project_task_id
-         LEFT JOIN timesheet_task_buckets b ON b.id = t.bucket_id
-         LEFT JOIN timesheet_date_overrides o ON o.id = t.override_id
-         WHERE t.project_id IS NOT NULL`
-      );
-
-    // Sort in JS: an SQL ORDER BY carrying the NVARCHAR(MAX) task_description
-    // column makes the query exceed the 15s request timeout.
-    const str = (v: any) => (v == null ? "" : String(v));
-    const time = (v: any) => (v instanceof Date ? v.getTime() : v == null ? -1 : new Date(v).getTime());
-    result.recordset.sort((a: any, b: any) =>
-      str(a.project_name).localeCompare(str(b.project_name), undefined, { sensitivity: "base" }) ||
-      str(a.employee_name).localeCompare(str(b.employee_name), undefined, { sensitivity: "base" }) ||
-      time(a.task_date) - time(b.task_date) ||
-      time(a.from_time_utc) - time(b.from_time_utc)
-    );
-
-    const rows = result.recordset.map((r: any) => {
-      const fromRaw = r.from_time_utc instanceof Date ? r.from_time_utc.toISOString() : String(r.from_time_utc || "");
-      const toRaw = r.to_time_utc instanceof Date ? r.to_time_utc.toISOString() : String(r.to_time_utc || "");
-      const fromUtc = fromRaw.includes("T") ? fromRaw.split("T")[1].substring(0, 5) : fromRaw.substring(0, 5);
-      const toUtc = toRaw.includes("T") ? toRaw.split("T")[1].substring(0, 5) : toRaw.substring(0, 5);
-
-      const overrideDateRaw = r.override_date instanceof Date
-        ? r.override_date.toISOString().split("T")[0]
-        : String(r.override_date || "").split("T")[0];
-
-      let istDate = overrideDateRaw;
-      let fromIst: string | null = null;
-      let toIst: string | null = null;
-      if (fromUtc && overrideDateRaw) {
-        const fromResult = utcDateTimeToIst(overrideDateRaw, fromUtc);
-        istDate = fromResult.date;
-        fromIst = fromResult.time;
-      }
-      if (toUtc && overrideDateRaw) {
-        toIst = utcDateTimeToIst(overrideDateRaw, toUtc).time;
-      }
-
-      return {
-        employee_email: r.employee_email,
-        employee_name: r.employee_name,
-        task_date: istDate,
-        task_description: r.task_description,
-        status: r.status,
-        project_id: r.project_id,
-        project_name: r.project_name,
-        project_task_id: r.project_task_id,
-        project_task_name: r.project_task_name,
-        bucket_id: r.bucket_id,
-        bucket_name: r.bucket_name,
-        from_time_ist: fromIst,
-        to_time_ist: toIst,
-      };
-    });
-
-    res.json(rows);
+    await runReport(req, res, "project");
   } catch (err) {
     console.error("Error fetching project report:", err);
     res.status(500).json({ error: "Failed to fetch project report" });

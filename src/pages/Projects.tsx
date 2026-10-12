@@ -173,18 +173,12 @@ export default function Projects({ userEmail }: { userEmail: string }) {
             <button onClick={() => navigate("/")} className="text-[#4fc3f7] hover:text-white transition-colors">
               ← Back
             </button>
-            <h1 className="text-lg sm:text-xl font-semibold text-white">Projects</h1>
+            <h1 className="text-lg sm:text-xl font-semibold text-white">Project-wise Report</h1>
             <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium border border-purple-500/30">
               Admin
             </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={() => navigate("/approvals")}
-              className="px-3 py-1.5 bg-white/10 border border-white/30 text-white rounded-lg hover:bg-white/20 text-xs sm:text-sm font-medium transition-all"
-            >
-              Approvals
-            </button>
             <button
               onClick={() => navigate("/projects/report")}
               className="px-3 py-1.5 bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-lg hover:bg-purple-500/30 text-xs sm:text-sm font-medium transition-all"

@@ -51,17 +51,19 @@ export default function ProjectView() {
       setLoading(false);
       return;
     }
+    // The task list only carries stage names, so load each task's stage details too
     fetch(`/api/project-tasks/${projectId}`)
       .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          const filled = data.map((t: any) => ({
-            ...t,
-            expanded: false,
-            buckets: t.buckets,
-          }));
-          setTasks(filled);
-        }
+      .then(async (data) => {
+        if (!Array.isArray(data)) return;
+        const filled = await Promise.all(
+          data.map(async (t: any) => {
+            const res = await fetch(`/api/project-tasks/${projectId}/${t.id}/details`);
+            const buckets = res.ok ? await res.json() : {};
+            return { ...t, expanded: false, buckets };
+          })
+        );
+        setTasks(filled);
       })
       .catch((err) => console.error("Failed to fetch tasks:", err))
       .finally(() => setLoading(false));
