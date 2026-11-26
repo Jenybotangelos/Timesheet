@@ -27,15 +27,39 @@ const EMPTY: ReportResponse = {
   options: { projects: [], tasks: [], stages: [] },
 };
 
-// Fetches one page of a report. Params with null/empty values are left out of the query.
-export function useReport(url: string, params: Record<string, string | number | null>) {
-  const [data, setData] = useState<ReportResponse>(EMPTY);
-  const [loading, setLoading] = useState(true);
-  const query = new URLSearchParams(
-    Object.entries({ ...params, pageSize: REPORT_PAGE_SIZE })
+type ReportParams = Record<string, string | number | null>;
+
+// Query string for a report request. Params with null/empty values are left out.
+function reportQuery(params: ReportParams): string {
+  return new URLSearchParams(
+    Object.entries(params)
       .filter(([, v]) => v !== null && String(v) !== "")
       .map(([k, v]) => [k, String(v)])
   ).toString();
+}
+
+// Largest page the server will return (it caps pageSize at 200)
+const EXPORT_PAGE_SIZE = 200;
+
+// Fetches every row matching the filters by walking through all pages (used for exports)
+export async function fetchAllReportRows(url: string, params: ReportParams): Promise<any[]> {
+  const all: any[] = [];
+  for (let page = 1; ; page++) {
+    const res = await fetch(`${url}?${reportQuery({ ...params, page, pageSize: EXPORT_PAGE_SIZE })}`);
+    const json = await res.json();
+    if (!res.ok || !Array.isArray(json?.rows)) {
+      throw new Error(json?.error || `Report request failed (${res.status})`);
+    }
+    all.push(...json.rows);
+    if (json.rows.length === 0 || all.length >= json.totalRows) return all;
+  }
+}
+
+// Fetches one page of a report. Params with null/empty values are left out of the query.
+export function useReport(url: string, params: ReportParams) {
+  const [data, setData] = useState<ReportResponse>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const query = reportQuery({ ...params, pageSize: REPORT_PAGE_SIZE });
 
   useEffect(() => {
     let stale = false; // ignore responses that arrive after a newer request started

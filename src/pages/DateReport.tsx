@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import FilterHeader from "../components/FilterHeader";
 import Pagination from "../components/Pagination";
-import { useReport, formatMinutes } from "../components/useReport";
+import { useReport, fetchAllReportRows, formatMinutes } from "../components/useReport";
 import { PRESETS, presetRange, formatDateShort, type RangePreset } from "../components/dateRanges";
+import { downloadCsv } from "../components/csv";
 
 const API_BASE = "/api";
 
@@ -32,17 +33,57 @@ export default function DateReport({ userEmail }: { userEmail: string }) {
   const [openDropdown, setOpenDropdown] = useState<FilterName | null>(null);
   const [page, setPage] = useState(1);
 
+  const [exporting, setExporting] = useState(false);
+
   // Filtering, totals and paging are done by the server
-  const { data, loading } = useReport(`${API_BASE}/tasks/weekly`, {
+  const filterParams = {
     email: userEmail,
     startDate: reportStartDate,
     endDate: reportEndDate,
-    page,
     employee: reportEmployee,
     projectId: reportProject,
     taskId: reportTask,
     stage: reportStage,
-  });
+  };
+  const { data, loading } = useReport(`${API_BASE}/tasks/weekly`, { ...filterParams, page });
+
+  // Downloads every row matching the current date range and filters (all pages, not just this one)
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const all = await fetchAllReportRows(`${API_BASE}/tasks/weekly`, filterParams);
+      const minutes = (from: string, to: string) => {
+        const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+        return (toMin(to) - toMin(from) + 1440) % 1440;
+      };
+      downloadCsv(
+        `date-report_${reportStartDate}_to_${reportEndDate}.csv`,
+        ["Employee", "Email", "Date", "From (IST)", "To (IST)", "Hours", "Project", "Task", "Stage", "Task Description", "Status"],
+        all.map((t: any) => {
+          const from = t.from_time_ist || "";
+          const to = t.to_time_ist || "";
+          return [
+            t.employee_name,
+            t.employee_email,
+            String(t.task_date || "").split("T")[0],
+            from,
+            to,
+            from && to ? (minutes(from, to) / 60).toFixed(2) : "",
+            t.project_name || "",
+            t.project_task_name || "",
+            t.bucket_name || "",
+            t.task_description || "",
+            t.status,
+          ];
+        })
+      );
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // Any filter change starts again from page 1
   function applyFilter(apply: () => void) {
@@ -143,6 +184,14 @@ export default function DateReport({ userEmail }: { userEmail: string }) {
               <span className="font-semibold text-white">Total:</span>{" "}
               <span className="text-[#4fc3f7] font-bold">{formatMinutes(data.totalMinutes)}</span>
             </span>
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={exporting}
+              className="ml-auto px-3 py-1.5 bg-gradient-to-r from-[#4fc3f7] to-[#0078d4] text-white rounded-lg hover:from-[#81d4fa] hover:to-[#2196f3] text-xs sm:text-sm font-medium transition-all shadow-md disabled:opacity-60 disabled:cursor-wait"
+            >
+              {exporting ? "Exporting…" : "Export CSV"}
+            </button>
           </div>
         )}
 
